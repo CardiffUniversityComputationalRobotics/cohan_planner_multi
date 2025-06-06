@@ -1,4 +1,4 @@
 std_msgs/Header header
 uint64          id
 int8            type
-duration        time_to_goal
+float64        time_to_goal
