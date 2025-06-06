@@ -54,10 +54,7 @@
 
   <!-- External libraries (handled manually in CMakeLists.txt) -->
   <exec_depend>libg2o</exec_depend>
-  <exec_depend>eigen3</exec_depend>
-  <exec_depend>libboost-system</exec_depend>
-  <exec_depend>libboost-thread</exec_depend>
-  <exec_depend>suitesparse</exec_depend>
+  <!-- <exec_depend>suitesparse</exec_depend> -->
 
   <!-- Export pluginlib plugin -->
   <export>

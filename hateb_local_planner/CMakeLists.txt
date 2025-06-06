@@ -27,7 +27,7 @@ find_package(interactive_markers REQUIRED)
 find_package(Eigen3 REQUIRED)
 find_package(Boost REQUIRED COMPONENTS system thread)
 find_package(G2O REQUIRED)
-find_package(SUITESPARSE REQUIRED)
+# find_package(SUITESPARSE REQUIRED)
 find_package(rosidl_default_generators REQUIRED)
 
 # Custom dependencies
@@ -56,11 +56,12 @@ include_directories(
   include
   ${EIGEN3_INCLUDE_DIRS}
   ${G2O_INCLUDE_DIR}
-  ${SUITESPARSE_INCLUDE_DIRS}
+  # ${SUITESPARSE_INCLUDE_DIRS}
 )
 
 # External libraries
-set(EXTERNAL_LIBS ${SUITESPARSE_LIBRARIES} ${G2O_LIBRARIES} ${Boost_LIBRARIES})
+# set(EXTERNAL_LIBS ${SUITESPARSE_LIBRARIES} ${G2O_LIBRARIES} ${Boost_LIBRARIES})
+set(EXTERNAL_LIBS ${G2O_LIBRARIES} ${Boost_LIBRARIES})
 
 # Library
 add_library(hateb_local_planner
