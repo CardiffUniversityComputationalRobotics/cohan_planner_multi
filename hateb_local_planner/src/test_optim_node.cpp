@@ -44,7 +44,6 @@
 #include <boost/shared_ptr.hpp>
 #include <boost/make_shared.hpp>
 
-
 using namespace hateb_local_planner; // it is ok here to import everything for testing purposes
 
 // ============= Global Variables ================
@@ -54,7 +53,7 @@ TebVisualizationPtr visual;
 std::vector<ObstaclePtr> obst_vector;
 ViaPointContainer via_points;
 HATebConfig config;
-boost::shared_ptr< dynamic_reconfigure::Server<HATebLocalPlannerReconfigureConfig> > dynamic_recfg;
+boost::shared_ptr<dynamic_reconfigure::Server<HATebLocalPlannerReconfigureConfig>> dynamic_recfg;
 ros::Subscriber custom_obst_sub;
 ros::Subscriber via_points_sub;
 ros::Subscriber clicked_points_sub;
@@ -62,23 +61,21 @@ std::vector<ros::Subscriber> obst_vel_subs;
 unsigned int no_fixed_obstacles;
 
 // =========== Function declarations =============
-void CB_mainCycle(const ros::TimerEvent& e);
-void CB_publishCycle(const ros::TimerEvent& e);
-void CB_reconfigure(HATebLocalPlannerReconfigureConfig& reconfig, uint32_t level);
-void CB_customObstacle(const costmap_converter::ObstacleArrayMsg::ConstPtr& obst_msg);
-void CreateInteractiveMarker(const double& init_x, const double& init_y, unsigned int id, std::string frame, interactive_markers::InteractiveMarkerServer* marker_server, interactive_markers::InteractiveMarkerServer::FeedbackCallback feedback_cb);
+void CB_mainCycle(const ros::TimerEvent &e);
+void CB_publishCycle(const ros::TimerEvent &e);
+void CB_reconfigure(HATebLocalPlannerReconfigureConfig &reconfig, uint32_t level);
+void CB_customObstacle(const costmap_converter::ObstacleArrayMsg::ConstPtr &obst_msg);
+void CreateInteractiveMarker(const double &init_x, const double &init_y, unsigned int id, std::string frame, interactive_markers::InteractiveMarkerServer *marker_server, interactive_markers::InteractiveMarkerServer::FeedbackCallback feedback_cb);
 void CB_obstacle_marker(const visualization_msgs::InteractiveMarkerFeedbackConstPtr &feedback);
-void CB_clicked_points(const geometry_msgs::PointStampedConstPtr& point_msg);
-void CB_via_points(const nav_msgs::Path::ConstPtr& via_points_msg);
-void CB_setObstacleVelocity(const geometry_msgs::TwistConstPtr& twist_msg, const unsigned int id);
-
+void CB_clicked_points(const geometry_msgs::PointStampedConstPtr &point_msg);
+void CB_via_points(const nav_msgs::Path::ConstPtr &via_points_msg);
+void CB_setObstacleVelocity(const geometry_msgs::TwistConstPtr &twist_msg, const unsigned int id);
 
 // =============== Main function =================
-int main( int argc, char** argv )
+int main(int argc, char **argv)
 {
   ros::init(argc, argv, "test_optim_node");
   ros::NodeHandle n("~");
-
 
   // load ros parameters from node handle
   config.loadRosParamFromNodeHandle(n);
@@ -87,7 +84,7 @@ int main( int argc, char** argv )
   ros::Timer publish_timer = n.createTimer(ros::Duration(0.1), CB_publishCycle);
 
   // setup dynamic reconfigure
-  dynamic_recfg = boost::make_shared< dynamic_reconfigure::Server<HATebLocalPlannerReconfigureConfig> >(n);
+  dynamic_recfg = boost::make_shared<dynamic_reconfigure::Server<HATebLocalPlannerReconfigureConfig>>(n);
   dynamic_reconfigure::Server<HATebLocalPlannerReconfigureConfig>::CallbackType cb = boost::bind(CB_reconfigure, _1, _2);
   dynamic_recfg->setCallback(cb);
 
@@ -103,15 +100,15 @@ int main( int argc, char** argv )
   // interactive marker server for simulated dynamic obstacles
   interactive_markers::InteractiveMarkerServer marker_server("marker_obstacles");
 
-  obst_vector.push_back( boost::make_shared<PointObstacle>(-3,1) );
-  obst_vector.push_back( boost::make_shared<PointObstacle>(6,2) );
-  obst_vector.push_back( boost::make_shared<PointObstacle>(0,0.1) );
-//  obst_vector.push_back( boost::make_shared<LineObstacle>(1,1.5,1,-1.5) ); //90 deg
-//  obst_vector.push_back( boost::make_shared<LineObstacle>(1,0,-1,0) ); //180 deg
-//  obst_vector.push_back( boost::make_shared<PointObstacle>(-1.5,-0.5) );
+  obst_vector.push_back(boost::make_shared<PointObstacle>(-3, 1));
+  obst_vector.push_back(boost::make_shared<PointObstacle>(6, 2));
+  obst_vector.push_back(boost::make_shared<PointObstacle>(0, 0.1));
+  //  obst_vector.push_back( boost::make_shared<LineObstacle>(1,1.5,1,-1.5) ); //90 deg
+  //  obst_vector.push_back( boost::make_shared<LineObstacle>(1,0,-1,0) ); //180 deg
+  //  obst_vector.push_back( boost::make_shared<PointObstacle>(-1.5,-0.5) );
 
   // Dynamic obstacles
-  Eigen::Vector2d vel (0.1, -0.3);
+  Eigen::Vector2d vel(0.1, -0.3);
   obst_vector.at(0)->setCentroidVelocity(vel);
   vel = Eigen::Vector2d(-0.3, -0.2);
   obst_vector.at(1)->setCentroidVelocity(vel);
@@ -127,18 +124,18 @@ int main( int argc, char** argv )
   obst_vector.emplace_back(polyobst);
   */
 
-  for (unsigned int i=0; i<obst_vector.size(); ++i)
+  for (unsigned int i = 0; i < obst_vector.size(); ++i)
   {
     // setup callbacks for setting obstacle velocities
     std::string topic = "/test_optim_node/obstacle_" + std::to_string(i) + "/cmd_vel";
     obst_vel_subs.push_back(n.subscribe<geometry_msgs::Twist>(topic, 1, boost::bind(&CB_setObstacleVelocity, _1, i)));
 
-    //CreateInteractiveMarker(obst_vector.at(i)[0],obst_vector.at(i)[1],i,&marker_server, &CB_obstacle_marker);
-    // Add interactive markers for all point obstacles
+    // CreateInteractiveMarker(obst_vector.at(i)[0],obst_vector.at(i)[1],i,&marker_server, &CB_obstacle_marker);
+    //  Add interactive markers for all point obstacles
     boost::shared_ptr<PointObstacle> pobst = boost::dynamic_pointer_cast<PointObstacle>(obst_vector.at(i));
     if (pobst)
     {
-      CreateInteractiveMarker(pobst->x(),pobst->y(),i, config.map_frame, &marker_server, &CB_obstacle_marker);
+      CreateInteractiveMarker(pobst->x(), pobst->y(), i, config.map_frame, &marker_server, &CB_obstacle_marker);
     }
   }
   marker_server.applyChanges();
@@ -155,7 +152,6 @@ int main( int argc, char** argv )
   else
     planner = PlannerInterfacePtr(new TebOptimalPlanner(config, &obst_vector, robot_model, visual, &via_points));
 
-
   no_fixed_obstacles = obst_vector.size();
   ros::spin();
 
@@ -163,32 +159,32 @@ int main( int argc, char** argv )
 }
 
 // Planning loop
-void CB_mainCycle(const ros::TimerEvent& e)
+void CB_mainCycle(const ros::TimerEvent &e)
 {
-  planner->plan(PoseSE2(-4,0,0), PoseSE2(4,0,0)); // hardcoded start and goal for testing purposes
+  planner->plan(PoseSE2(-4, 0, 0), PoseSE2(4, 0, 0)); // hardcoded start and goal for testing purposes
 }
 
 // Visualization loop
-void CB_publishCycle(const ros::TimerEvent& e)
+void CB_publishCycle(const ros::TimerEvent &e)
 {
   planner->visualize();
   visual->publishObstacles(obst_vector);
   visual->publishViaPoints(via_points);
 }
 
-void CB_reconfigure(HATebLocalPlannerReconfigureConfig& reconfig, uint32_t level)
+void CB_reconfigure(HATebLocalPlannerReconfigureConfig &reconfig, uint32_t level)
 {
   config.reconfigure(reconfig);
 }
 
-void CreateInteractiveMarker(const double& init_x, const double& init_y, unsigned int id, std::string frame, interactive_markers::InteractiveMarkerServer* marker_server, interactive_markers::InteractiveMarkerServer::FeedbackCallback feedback_cb)
+void CreateInteractiveMarker(const double &init_x, const double &init_y, unsigned int id, std::string frame, interactive_markers::InteractiveMarkerServer *marker_server, interactive_markers::InteractiveMarkerServer::FeedbackCallback feedback_cb)
 {
   // create an interactive marker for our server
   visualization_msgs::InteractiveMarker i_marker;
   i_marker.header.frame_id = frame;
   i_marker.header.stamp = ros::Time::now();
   std::ostringstream oss;
-  //oss << "obstacle" << id;
+  // oss << "obstacle" << id;
   oss << id;
   i_marker.name = oss.str();
   i_marker.description = "Obstacle";
@@ -212,10 +208,10 @@ void CreateInteractiveMarker(const double& init_x, const double& init_y, unsigne
   // create a non-interactive control which contains the box
   visualization_msgs::InteractiveMarkerControl box_control;
   box_control.always_visible = true;
-  box_control.markers.push_back( box_marker );
+  box_control.markers.push_back(box_marker);
 
   // add the control to the interactive marker
-  i_marker.controls.push_back( box_control );
+  i_marker.controls.push_back(box_control);
 
   // create a control which will move the box, rviz will insert 2 arrows
   visualization_msgs::InteractiveMarkerControl move_control;
@@ -226,13 +222,12 @@ void CreateInteractiveMarker(const double& init_x, const double& init_y, unsigne
   move_control.orientation.z = 0;
   move_control.interaction_mode = visualization_msgs::InteractiveMarkerControl::MOVE_PLANE;
 
-
   // add the control to the interactive marker
   i_marker.controls.push_back(move_control);
 
   // add the interactive marker to our collection
   marker_server->insert(i_marker);
-  marker_server->setCallback(i_marker.name,feedback_cb);
+  marker_server->setCallback(i_marker.name, feedback_cb);
 }
 
 void CB_obstacle_marker(const visualization_msgs::InteractiveMarkerFeedbackConstPtr &feedback)
@@ -241,13 +236,13 @@ void CB_obstacle_marker(const visualization_msgs::InteractiveMarkerFeedbackConst
   unsigned int index;
   ss >> index;
 
-  if (index>=no_fixed_obstacles)
+  if (index >= no_fixed_obstacles)
     return;
-  PointObstacle* pobst = static_cast<PointObstacle*>(obst_vector.at(index).get());
-  pobst->position() = Eigen::Vector2d(feedback->pose.position.x,feedback->pose.position.y);
+  PointObstacle *pobst = static_cast<PointObstacle *>(obst_vector.at(index).get());
+  pobst->position() = Eigen::Vector2d(feedback->pose.position.x, feedback->pose.position.y);
 }
 
-void CB_customObstacle(const costmap_converter::ObstacleArrayMsg::ConstPtr& obst_msg)
+void CB_customObstacle(const costmap_converter::ObstacleArrayMsg::ConstPtr &obst_msg)
 {
   // resize such that the vector contains only the fixed obstacles specified inside the main function
   obst_vector.resize(no_fixed_obstacles);
@@ -255,59 +250,58 @@ void CB_customObstacle(const costmap_converter::ObstacleArrayMsg::ConstPtr& obst
   // Add custom obstacles obtained via message (assume that all obstacles coordiantes are specified in the default planning frame)
   for (size_t i = 0; i < obst_msg->obstacles.size(); ++i)
   {
-    if (obst_msg->obstacles.at(i).polygon.points.size() == 1 )
+    if (obst_msg->obstacles.at(i).polygon.points.size() == 1)
     {
-       if (obst_msg->obstacles.at(i).radius == 0)
+      if (obst_msg->obstacles.at(i).radius == 0)
       {
-        obst_vector.push_back(ObstaclePtr(new PointObstacle( obst_msg->obstacles.at(i).polygon.points.front().x,
-					obst_msg->obstacles.at(i).polygon.points.front().y )));
+        obst_vector.push_back(ObstaclePtr(new PointObstacle(obst_msg->obstacles.at(i).polygon.points.front().x,
+                                                            obst_msg->obstacles.at(i).polygon.points.front().y)));
       }
       else
       {
-	obst_vector.push_back(ObstaclePtr(new CircularObstacle( obst_msg->obstacles.at(i).polygon.points.front().x,
-                                                            obst_msg->obstacles.at(i).polygon.points.front().y,
-                                                            obst_msg->obstacles.at(i).radius )));
+        obst_vector.push_back(ObstaclePtr(new CircularObstacle(obst_msg->obstacles.at(i).polygon.points.front().x,
+                                                               obst_msg->obstacles.at(i).polygon.points.front().y,
+                                                               obst_msg->obstacles.at(i).radius)));
       }
     }
     else
     {
-      PolygonObstacle* polyobst = new PolygonObstacle;
-      for (size_t j=0; j<obst_msg->obstacles.at(i).polygon.points.size(); ++j)
+      PolygonObstacle *polyobst = new PolygonObstacle;
+      for (size_t j = 0; j < obst_msg->obstacles.at(i).polygon.points.size(); ++j)
       {
-        polyobst->pushBackVertex( obst_msg->obstacles.at(i).polygon.points[j].x,
-                                  obst_msg->obstacles.at(i).polygon.points[j].y );
+        polyobst->pushBackVertex(obst_msg->obstacles.at(i).polygon.points[j].x,
+                                 obst_msg->obstacles.at(i).polygon.points[j].y);
       }
       polyobst->finalizePolygon();
       obst_vector.push_back(ObstaclePtr(polyobst));
     }
 
-    if(!obst_vector.empty())
+    if (!obst_vector.empty())
       obst_vector.back()->setCentroidVelocity(obst_msg->obstacles.at(i).velocities, obst_msg->obstacles.at(i).orientation);
   }
 }
 
-
-void CB_clicked_points(const geometry_msgs::PointStampedConstPtr& point_msg)
+void CB_clicked_points(const geometry_msgs::PointStampedConstPtr &point_msg)
 {
   // we assume for simplicity that the fixed frame is already the map/planning frame
   // consider clicked points as via-points
-  via_points.push_back( Eigen::Vector2d(point_msg->point.x, point_msg->point.y) );
+  via_points.push_back(Eigen::Vector2d(point_msg->point.x, point_msg->point.y));
   ROS_INFO_STREAM("Via-point (" << point_msg->point.x << "," << point_msg->point.y << ") added.");
-  if (config.optim.weight_viapoint<=0)
+  if (config.optim.weight_viapoint <= 0)
     ROS_WARN("Note, via-points are deactivated, since 'weight_via_point' <= 0");
 }
 
-void CB_via_points(const nav_msgs::Path::ConstPtr& via_points_msg)
+void CB_via_points(const nav_msgs::Path::ConstPtr &via_points_msg)
 {
   ROS_INFO_ONCE("Via-points received. This message is printed once.");
   via_points.clear();
-  for (const geometry_msgs::PoseStamped& pose : via_points_msg->poses)
+  for (const geometry_msgs::PoseStamped &pose : via_points_msg->poses)
   {
     via_points.emplace_back(pose.pose.position.x, pose.pose.position.y);
   }
 }
 
-void CB_setObstacleVelocity(const geometry_msgs::TwistConstPtr& twist_msg, const unsigned int id)
+void CB_setObstacleVelocity(const geometry_msgs::TwistConstPtr &twist_msg, const unsigned int id)
 {
   if (id >= obst_vector.size())
   {
@@ -315,6 +309,6 @@ void CB_setObstacleVelocity(const geometry_msgs::TwistConstPtr& twist_msg, const
     return;
   }
 
-  Eigen::Vector2d vel (twist_msg->linear.x, twist_msg->linear.y);
+  Eigen::Vector2d vel(twist_msg->linear.x, twist_msg->linear.y);
   obst_vector.at(id)->setCentroidVelocity(vel);
 }

@@ -43,201 +43,223 @@
 #define DEFAULT_AGENT_PART cohan_msgs::TrackedSegmentType::TORSO
 #define EPS 1e-20
 
-namespace hateb_local_planner{
-OptimizedVel::OptimizedVel(tf2_ros::Buffer &tf2_) : initialized_(false), predict_behind_robot_(true), got_robot_plan(false),
-                                                     got_agent_plan(false), tf_(tf2_), tfListener_(tf_)
+namespace hateb_local_planner
 {
-}
-
-OptimizedVel::~OptimizedVel()
-{
-}
-
-void OptimizedVel::initialize()
-{
-  if(!initialized_){
-    ros::NodeHandle nh("~");
-
-    std::string get_plan_srv_name = std::string(GET_PLAN_SRV);
-    std::string optimize_srv_name = std::string(OPTIMIZE_SRV);
-
-    getPlan_client  = nh.serviceClient<nav_msgs::GetPlan>(get_plan_srv_name, true);
-    optimize_client = nh.serviceClient<hateb_local_planner::Optimize>(optimize_srv_name, true);
-    agents_sub_ = nh.subscribe(AGENTS_SUB, 1, &OptimizedVel::UpdateStartPoses, this);
-    get_vel_srv_ = nh.advertiseService("get_vel", &OptimizedVel::get_vel_srv, this);
-    initialized_ = true;
-    ROS_INFO("Everything is ready !");
+  OptimizedVel::OptimizedVel(tf2_ros::Buffer &tf2_) : initialized_(false), predict_behind_robot_(true), got_robot_plan(false),
+                                                      got_agent_plan(false), tf_(tf2_), tfListener_(tf_)
+  {
   }
-}
 
-void OptimizedVel::UpdateStartPoses(const cohan_msgs::TrackedAgents &tracked_agents){
-  agents_start_poses.clear();
-  tracked_agents_ = tracked_agents;
-  for(auto &agent: tracked_agents_.agents){
-    for(auto &segment : agent.segments){
-      if(segment.type == DEFAULT_AGENT_PART){
-        geometry_msgs::PoseStamped hum_pose;
-        hum_pose.pose = segment.pose.pose;
-        hum_pose.header.frame_id ="map";
-        hum_pose.header.stamp = ros::Time::now();
-        agents_start_poses.push_back(hum_pose);
-      }
+  OptimizedVel::~OptimizedVel()
+  {
+  }
+
+  void OptimizedVel::initialize()
+  {
+    if (!initialized_)
+    {
+      ros::NodeHandle nh("~");
+
+      std::string get_plan_srv_name = std::string(GET_PLAN_SRV);
+      std::string optimize_srv_name = std::string(OPTIMIZE_SRV);
+
+      getPlan_client = nh.serviceClient<nav_msgs::GetPlan>(get_plan_srv_name, true);
+      optimize_client = nh.serviceClient<hateb_local_planner::Optimize>(optimize_srv_name, true);
+      agents_sub_ = nh.subscribe(AGENTS_SUB, 1, &OptimizedVel::UpdateStartPoses, this);
+      get_vel_srv_ = nh.advertiseService("get_vel", &OptimizedVel::get_vel_srv, this);
+      initialized_ = true;
+      ROS_INFO("Everything is ready !");
     }
   }
 
-  try{
-    std::string base = "base_footprint";
-    robot_to_map_tf = tf_.lookupTransform("map", base, ros::Time(0));
-  }
-  catch (tf2::TransformException &ex) {
-    ROS_WARN("%s",ex.what());
-    ros::Duration(1.0).sleep();
-  }
-  robot_start_pose.header = robot_to_map_tf.header;
-  robot_start_pose.pose.position.x =  robot_to_map_tf.transform.translation.x;
-  robot_start_pose.pose.position.y =  robot_to_map_tf.transform.translation.y;
-  robot_start_pose.pose.position.z =  robot_to_map_tf.transform.translation.z;
-  robot_start_pose.pose.orientation.x =  robot_to_map_tf.transform.rotation.x;
-  robot_start_pose.pose.orientation.y =  robot_to_map_tf.transform.rotation.y;
-  robot_start_pose.pose.orientation.z =  robot_to_map_tf.transform.rotation.z;
-  robot_start_pose.pose.orientation.w =  robot_to_map_tf.transform.rotation.w;
-}
-
-void OptimizedVel::correctPose(geometry_msgs::Pose &behind_pose){
-  behind_pose.position.x = (fabs(behind_pose.position.x) > EPS) ? behind_pose.position.x : 0.0;
-  behind_pose.position.y = (fabs(behind_pose.position.y) > EPS) ? behind_pose.position.y : 0.0;
-  behind_pose.position.z = (fabs(behind_pose.position.z) > EPS) ? behind_pose.position.z : 0.0;
-  behind_pose.orientation.x = 0.0;
-  behind_pose.orientation.y = 0.0;
-  behind_pose.orientation.z = (fabs(behind_pose.orientation.z) > EPS) ? behind_pose.orientation.z : 0.0;
-  behind_pose.orientation.w = (fabs(behind_pose.orientation.w) < 1.0) ? behind_pose.orientation.w : 0.0;
-}
-
-
-bool OptimizedVel::checkGoal(geometry_msgs::PoseStamped goal){
-  if(goal.header.frame_id == "")
-    return false;
-  else if(goal.pose.orientation.w == 0.0)
-    return false;
-  else
-    return true;
-}
-
-geometry_msgs::Twist OptimizedVel::OptimizeAndgetVel(const geometry_msgs::PoseStamped &robot_goal){
-  robot_goal_= robot_goal;
-  geometry_msgs::Twist cmd_vel_;
-
-  if(!checkGoal(robot_goal_)){
-    cmd_vel_.linear.z =  -100;
-    return cmd_vel_;
-  }
-
-  auto now = ros::Time::now();
-  nav_msgs::GetPlan agent_plan_srv, robot_plan_srv;
-  cohan_msgs::AgentPathArray hum_path_arr;
-  hum_path_arr.header.frame_id = "map";
-  hum_path_arr.header.stamp = now;
-
-  //get global robot_plan
-  robot_plan_srv.request.start = robot_start_pose;
-  robot_plan_srv.request.goal = robot_goal_;
-  if(getPlan_client.call(robot_plan_srv)){
-    if(robot_plan_srv.response.plan.poses.size()>0)
-      got_robot_plan = true;
-    else
-      got_robot_plan = false;
-  }
-  else{
-    ROS_ERROR_NAMED("Optimed_Vel", "Cannot subscribe to the service %s", GET_PLAN_SRV);
-    cmd_vel_.linear.z =  -100;
-    return cmd_vel_;
-  }
-
-
-  int idx = 0;
-  for(auto &agent : tracked_agents_.agents){
-    if(agent.track_id == 1){
-      if(predict_behind_robot_){
-        tf2::Transform behind_tr, robot_to_map_tf_;
-        behind_tr.setOrigin(tf2::Vector3(-0.5, 0.0, 0.0));
-        tf2::fromMsg(robot_to_map_tf.transform,robot_to_map_tf_);
-        behind_tr = robot_to_map_tf_ * behind_tr;
-        geometry_msgs::Pose behind_pose;
-        tf2::toMsg(behind_tr, behind_pose);
-        correctPose(behind_pose);
-
-        geometry_msgs::PoseStamped agent_goal;
-        agent_goal.header.frame_id = "map";
-        agent_goal.header.stamp = now;
-        agent_goal.pose = behind_pose;
-        agents_goals_.push_back(agent_goal);
-
-        agent_plan_srv.request.start = agents_start_poses[idx];
-        agent_plan_srv.request.goal = agent_goal;
-
-        if(getPlan_client.call(agent_plan_srv)){
-          if(agent_plan_srv.response.plan.poses.size()>0)
-            got_agent_plan = true;
-          else
-            got_agent_plan = false;
+  void OptimizedVel::UpdateStartPoses(const cohan_msgs::TrackedAgents &tracked_agents)
+  {
+    agents_start_poses.clear();
+    tracked_agents_ = tracked_agents;
+    for (auto &agent : tracked_agents_.agents)
+    {
+      for (auto &segment : agent.segments)
+      {
+        if (segment.type == DEFAULT_AGENT_PART)
+        {
+          geometry_msgs::PoseStamped hum_pose;
+          hum_pose.pose = segment.pose.pose;
+          hum_pose.header.frame_id = "map";
+          hum_pose.header.stamp = ros::Time::now();
+          agents_start_poses.push_back(hum_pose);
         }
-
-        cohan_msgs::AgentPath temp;
-        temp.header = agent_goal.header;
-        temp.id = agent.track_id;
-        temp.path = agent_plan_srv.response.plan;
-        hum_path_arr.paths.push_back(temp);
-
       }
     }
-    else{
-      agents_goals_.push_back(agents_start_poses[idx]);
+
+    try
+    {
+      std::string base = "base_footprint";
+      robot_to_map_tf = tf_.lookupTransform("map", base, ros::Time(0));
     }
-    idx++;
+    catch (tf2::TransformException &ex)
+    {
+      ROS_WARN("%s", ex.what());
+      ros::Duration(1.0).sleep();
+    }
+    robot_start_pose.header = robot_to_map_tf.header;
+    robot_start_pose.pose.position.x = robot_to_map_tf.transform.translation.x;
+    robot_start_pose.pose.position.y = robot_to_map_tf.transform.translation.y;
+    robot_start_pose.pose.position.z = robot_to_map_tf.transform.translation.z;
+    robot_start_pose.pose.orientation.x = robot_to_map_tf.transform.rotation.x;
+    robot_start_pose.pose.orientation.y = robot_to_map_tf.transform.rotation.y;
+    robot_start_pose.pose.orientation.z = robot_to_map_tf.transform.rotation.z;
+    robot_start_pose.pose.orientation.w = robot_to_map_tf.transform.rotation.w;
   }
 
-  agents_plans = hum_path_arr;
-  robot_plan = robot_plan_srv.response.plan;
+  void OptimizedVel::correctPose(geometry_msgs::Pose &behind_pose)
+  {
+    behind_pose.position.x = (fabs(behind_pose.position.x) > EPS) ? behind_pose.position.x : 0.0;
+    behind_pose.position.y = (fabs(behind_pose.position.y) > EPS) ? behind_pose.position.y : 0.0;
+    behind_pose.position.z = (fabs(behind_pose.position.z) > EPS) ? behind_pose.position.z : 0.0;
+    behind_pose.orientation.x = 0.0;
+    behind_pose.orientation.y = 0.0;
+    behind_pose.orientation.z = (fabs(behind_pose.orientation.z) > EPS) ? behind_pose.orientation.z : 0.0;
+    behind_pose.orientation.w = (fabs(behind_pose.orientation.w) < 1.0) ? behind_pose.orientation.w : 0.0;
+  }
 
-  if(got_agent_plan && got_robot_plan){
-    hateb_local_planner::Optimize optim_srv;
+  bool OptimizedVel::checkGoal(geometry_msgs::PoseStamped goal)
+  {
+    if (goal.header.frame_id == "")
+      return false;
+    else if (goal.pose.orientation.w == 0.0)
+      return false;
+    else
+      return true;
+  }
 
-    optim_srv.request.robot_plan = robot_plan_srv.response.plan;
-    optim_srv.request.agent_path_array = hum_path_arr;
+  geometry_msgs::Twist OptimizedVel::OptimizeAndgetVel(const geometry_msgs::PoseStamped &robot_goal)
+  {
+    robot_goal_ = robot_goal;
+    geometry_msgs::Twist cmd_vel_;
 
-    if(optimize_client.call(optim_srv)){
-      if(optim_srv.response.success){
-        // ROS_INFO("Optimization success");
-        cmd_vel_ = optim_srv.response.cmd_vel;
+    if (!checkGoal(robot_goal_))
+    {
+      cmd_vel_.linear.z = -100;
+      return cmd_vel_;
+    }
+
+    auto now = ros::Time::now();
+    nav_msgs::GetPlan agent_plan_srv, robot_plan_srv;
+    cohan_msgs::AgentPathArray hum_path_arr;
+    hum_path_arr.header.frame_id = "map";
+    hum_path_arr.header.stamp = now;
+
+    // get global robot_plan
+    robot_plan_srv.request.start = robot_start_pose;
+    robot_plan_srv.request.goal = robot_goal_;
+    if (getPlan_client.call(robot_plan_srv))
+    {
+      if (robot_plan_srv.response.plan.poses.size() > 0)
+        got_robot_plan = true;
+      else
+        got_robot_plan = false;
+    }
+    else
+    {
+      ROS_ERROR_NAMED("Optimed_Vel", "Cannot subscribe to the service %s", GET_PLAN_SRV);
+      cmd_vel_.linear.z = -100;
+      return cmd_vel_;
+    }
+
+    int idx = 0;
+    for (auto &agent : tracked_agents_.agents)
+    {
+      if (agent.track_id == 1)
+      {
+        if (predict_behind_robot_)
+        {
+          tf2::Transform behind_tr, robot_to_map_tf_;
+          behind_tr.setOrigin(tf2::Vector3(-0.5, 0.0, 0.0));
+          tf2::fromMsg(robot_to_map_tf.transform, robot_to_map_tf_);
+          behind_tr = robot_to_map_tf_ * behind_tr;
+          geometry_msgs::Pose behind_pose;
+          tf2::toMsg(behind_tr, behind_pose);
+          correctPose(behind_pose);
+
+          geometry_msgs::PoseStamped agent_goal;
+          agent_goal.header.frame_id = "map";
+          agent_goal.header.stamp = now;
+          agent_goal.pose = behind_pose;
+          agents_goals_.push_back(agent_goal);
+
+          agent_plan_srv.request.start = agents_start_poses[idx];
+          agent_plan_srv.request.goal = agent_goal;
+
+          if (getPlan_client.call(agent_plan_srv))
+          {
+            if (agent_plan_srv.response.plan.poses.size() > 0)
+              got_agent_plan = true;
+            else
+              got_agent_plan = false;
+          }
+
+          cohan_msgs::AgentPath temp;
+          temp.header = agent_goal.header;
+          temp.id = agent.track_id;
+          temp.path = agent_plan_srv.response.plan;
+          hum_path_arr.paths.push_back(temp);
+        }
       }
       else
-        ROS_INFO("Optimization failed !!");
+      {
+        agents_goals_.push_back(agents_start_poses[idx]);
       }
+      idx++;
+    }
+
+    agents_plans = hum_path_arr;
+    robot_plan = robot_plan_srv.response.plan;
+
+    if (got_agent_plan && got_robot_plan)
+    {
+      hateb_local_planner::Optimize optim_srv;
+
+      optim_srv.request.robot_plan = robot_plan_srv.response.plan;
+      optim_srv.request.agent_path_array = hum_path_arr;
+
+      if (optimize_client.call(optim_srv))
+      {
+        if (optim_srv.response.success)
+        {
+          // ROS_INFO("Optimization success");
+          cmd_vel_ = optim_srv.response.cmd_vel;
+        }
+        else
+          ROS_INFO("Optimization failed !!");
+      }
+    }
+
+    return cmd_vel_;
   }
 
-  return cmd_vel_;
-}
+  bool OptimizedVel::get_vel_srv(hateb_local_planner::getOptimVel::Request &req, hateb_local_planner::getOptimVel::Response &res)
+  {
 
-bool OptimizedVel::get_vel_srv(hateb_local_planner::getOptimVel::Request &req, hateb_local_planner::getOptimVel::Response &res){
+    auto cmd_vel_ = OptimizeAndgetVel(req.robot_goal);
 
-  auto cmd_vel_ = OptimizeAndgetVel(req.robot_goal);
+    if (cmd_vel_.linear.z == 0)
+    {
+      res.success = true;
+      res.message = "Got optim vel";
+      res.cmd_vel = cmd_vel_;
+    }
+    else
+    {
+      res.success = false;
+      res.message = "Failed to get velocity !";
+    }
 
-  if(cmd_vel_.linear.z == 0){
-    res.success = true;
-    res.message = "Got optim vel";
-    res.cmd_vel = cmd_vel_;
+    return true;
   }
-  else{
-    res.success = false;
-    res.message = "Failed to get velocity !";
-  }
 
-  return true;
-}
+} // namespace hateb_local_planner
 
-}// namespace hateb_local_planner
-
-int main(int argc, char** argv)
+int main(int argc, char **argv)
 {
   ros::init(argc, argv, "optim_vel");
 
