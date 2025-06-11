@@ -30,7 +30,7 @@
   <build_depend>rclcpp_components</build_depend>
   <build_depend>visualization_msgs</build_depend>
   <build_depend>cohan_msgs</build_depend>
-  <build_depend>agent_path_prediction</build_depend>
+  <!-- <build_depend>agent_path_prediction</build_depend> -->
   <build_depend>costmap_converter</build_depend>
   <build_depend>std_srvs</build_depend>
 
@@ -48,7 +48,7 @@
   <exec_depend>rclcpp_components</exec_depend>
   <exec_depend>visualization_msgs</exec_depend>
   <exec_depend>cohan_msgs</exec_depend>
-  <exec_depend>agent_path_prediction</exec_depend>
+  <!-- <exec_depend>agent_path_prediction</exec_depend> -->
   <exec_depend>costmap_converter</exec_depend>
   <exec_depend>std_srvs</exec_depend>
 
@@ -56,8 +56,10 @@
   <exec_depend>libg2o</exec_depend>
   <!-- <exec_depend>suitesparse</exec_depend> -->
 
+  <member_of_group>rosidl_interface_packages</member_of_group>
+
   <!-- Export pluginlib plugin -->
   <export>
-    <pluginlib plugin="${prefix}/hateb_local_planner_plugin.xml"/>
+    <!-- <pluginlib plugin="${prefix}/hateb_local_planner_plugin.xml"/> -->
   </export>
 </package>
