@@ -17,7 +17,6 @@
   <buildtool_depend>ament_cmake</buildtool_depend>
 
   <!-- Build dependencies -->
-  <build_depend>rosidl_default_generators</build_depend>
   <build_depend>geometry_msgs</build_depend>
   <build_depend>std_msgs</build_depend>
   <build_depend>nav_msgs</build_depend>
@@ -35,7 +34,6 @@
   <build_depend>std_srvs</build_depend>
 
   <!-- Execution dependencies -->
-  <exec_depend>rosidl_default_runtime</exec_depend>
   <exec_depend>geometry_msgs</exec_depend>
   <exec_depend>std_msgs</exec_depend>
   <exec_depend>nav_msgs</exec_depend>
@@ -56,10 +54,9 @@
   <exec_depend>libg2o</exec_depend>
   <!-- <exec_depend>suitesparse</exec_depend> -->
 
-  <member_of_group>rosidl_interface_packages</member_of_group>
-
   <!-- Export pluginlib plugin -->
   <export>
     <!-- <pluginlib plugin="${prefix}/hateb_local_planner_plugin.xml"/> -->
+    <build_type>ament_cmake</build_type>
   </export>
 </package>
