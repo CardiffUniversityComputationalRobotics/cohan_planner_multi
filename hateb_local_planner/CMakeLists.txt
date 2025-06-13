@@ -40,8 +40,8 @@ if(NOT G2O_INCLUDE_DIRS)
 endif()
 if(NOT G2O_LIBRARIES)
   set(G2O_LIBRARIES
-    /home/sasm/g2o/build/libg2o_core.so
-    /home/sasm/g2o/build/libg2o_stuff.so
+    /home/sasm/g2o/build/lib/libg2o_core.so
+    /home/sasm/g2o/build/lib/libg2o_stuff.so
     # add others if needed
   )
 endif()
@@ -81,16 +81,16 @@ set(dependencies
 set(EXTERNAL_LIBS ${G2O_LIBRARIES} ${Boost_LIBRARIES})
 
 add_executable(hateb_local_planner_node
-  src/hateb_local_planner_ros.cpp
-  src/timed_elastic_band.cpp
-  src/optimal_planner.cpp
-  src/obstacles.cpp
-  src/visualization.cpp
-  src/recovery_behaviors.cpp
-  src/hateb_config.cpp
-  src/homotopy_class_planner.cpp
+  # src/hateb_local_planner_ros.cpp
+  # src/timed_elastic_band.cpp
+  # src/optimal_planner.cpp
+  # src/obstacles.cpp
+  # src/visualization.cpp
+  # src/recovery_behaviors.cpp
+  # src/hateb_config.cpp
+  # src/homotopy_class_planner.cpp
   src/graph_search.cpp
-  src/backoff.cpp
+  # src/backoff.cpp
 )
 
 ament_target_dependencies(hateb_local_planner_node ${dependencies})

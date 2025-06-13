@@ -40,10 +40,9 @@
 #ifndef HATEB_LOCAL_PLANNER_ROS_H_
 #define HATEB_LOCAL_PLANNER_ROS_H_
 
-#include <ros/ros.h>
+#include <rclcpp/rclcpp.hpp>
 
 // base local planner base class and utilities
-#include <nav_core/base_local_planner.h>
 #include <mbf_costmap_core/costmap_controller.h>
 #include <base_local_planner/goal_functions.h>
 #include <base_local_planner/odometry_helper_ros.h>

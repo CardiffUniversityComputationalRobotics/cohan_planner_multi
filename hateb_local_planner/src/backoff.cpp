@@ -191,77 +191,6 @@ namespace hateb_local_planner
         count = 0;
 
       prev_start_pose = start_pose;
-
-      // Another working way but throws errors
-      // make plan for robot
-      // if (get_plan_client_) {
-      //   behind_tr.setOrigin(tf::Vector3(-0.5, 0.0, 0.0));
-      //   behind_tr.setRotation(tf::createQuaternionFromYaw(0.0));
-      //   behind_tr = robot_to_map_tf * behind_tr;
-      //   geometry_msgs::Transform temp_pose;
-      //   tf::transformTFToMsg(behind_tr, temp_pose);
-      //
-      //   get_plan_srv.request.goal.pose.position.x = temp_pose.translation.x;
-      //   get_plan_srv.request.goal.pose.position.y = temp_pose.translation.y;
-      //   get_plan_srv.request.goal.pose.position.z = temp_pose.translation.z;
-      //   get_plan_srv.request.goal.pose.orientation = temp_pose.rotation;
-      //   try{
-      //     get_plan_client_.call(get_plan_srv);
-      //
-      //     if (get_plan_srv.response.plan.poses.size() > 0) {
-      //      // ROS_INFO("feasible !!");
-      //      goal_pub_.publish(get_plan_srv.request.goal);
-      //      return true;
-      //     }
-      //     get_plan_srv.request.goal.pose.position.x = left_pose.translation.x;
-      //     get_plan_srv.request.goal.pose.position.y = left_pose.translation.y;
-      //     get_plan_srv.request.goal.pose.position.z = left_pose.translation.z;
-      //     get_plan_srv.request.goal.pose.orientation = left_pose.rotation;
-      //   }
-      //   catch (ros::Exception &e){
-      //     // ROS_ERROR("Error occured: %s ", e.what());
-      //     ROS_DEBUG("Right not feasible");
-      //   }
-      //
-      //   try {
-      //     get_plan_client_.call(get_plan_srv);
-      //
-      //     if (get_plan_srv.response.plan.poses.size() > 0) {
-      //      // ROS_INFO("feasible !!");
-      //      goal_pub_.publish(get_plan_srv.request.goal);
-      //      return true;
-      //     }
-      //     get_plan_srv.request.goal.pose.position.x = behind_pose.translation.x;
-      //     get_plan_srv.request.goal.pose.position.y = behind_pose.translation.y;
-      //     get_plan_srv.request.goal.pose.position.z = behind_pose.translation.z;
-      //     get_plan_srv.request.goal.pose.orientation = behind_pose.rotation;
-      //   }
-      //   catch (ros::Exception &e){
-      //     ROS_DEBUG("left not feasible");
-      //   }
-      //
-      //   if (get_plan_client_.call(get_plan_srv)) {
-      //     if (get_plan_srv.response.plan.poses.size() > 0) {
-      //      // ROS_INFO("Going Back !!");
-      //      // goal_pub_.publish(get_plan_srv.request.goal);
-      //      // return false;
-      //     }
-      //     else
-      //      count = 10;
-      //   }
-      //
-      //   else {
-      //     ROS_WARN_NAMED(NODE_NAME, "Failed to call %s service",
-      //                    GET_PLAN_SRV_NAME);
-      //   }
-      //
-      // } else {
-      //   ROS_WARN_NAMED(NODE_NAME,
-      //                  "%s service does not exist, re-trying to subscribe",
-      //                  GET_PLAN_SRV_NAME);
-      //   ros::NodeHandle nh("~/");
-      //   get_plan_client_ = nh.serviceClient<nav_msgs::GetPlan>(GET_PLAN_SRV_NAME, true);
-      // }
     }
     unsigned int mx, my;
     goal_.header.frame_id = map_frame;
@@ -302,18 +231,6 @@ namespace hateb_local_planner
     if (costmap_->worldToMap(behind_pose.translation.x, behind_pose.translation.y, mx, my))
     {
       auto cost = costmap_->getCost(mx, my);
-
-      /*
-        if(old_goal_.header.frame_id==map_frame){
-          if(fabs(goal_.pose.position.x-old_goal_.pose.position.x)>0.2 && fabs(goal_.pose.position.y-old_goal_.pose.position.y)>0.2){
-            goal_ = old_goal_;
-          }
-          else
-            old_goal_ = goal_;
-        }
-        else
-          old_goal_ = goal_;
-        */
 
       if (cost == costmap_2d::FREE_SPACE)
       {
