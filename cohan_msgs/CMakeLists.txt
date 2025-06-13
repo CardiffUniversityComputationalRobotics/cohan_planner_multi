@@ -14,6 +14,9 @@ find_package(geometry_msgs REQUIRED)
 find_package(nav_msgs REQUIRED)
 find_package(std_msgs REQUIRED)
 find_package(visualization_msgs REQUIRED)
+find_package(costmap_converter REQUIRED)
+find_package(costmap_converter REQUIRED)
+find_package(rosidl_default_generators REQUIRED)
 
 # Add message files
 set(msg_files
@@ -37,12 +40,21 @@ set(msg_files
   "msg/AgentMarker.msg"
   "msg/AgentMarkerStamped.msg"
   "msg/PointArray.msg"
+  "msg/ObstacleMsg.msg"
+  "msg/OptimizationCost.msg"
+  "msg/OptimizationCostArray.msg"
+  "msg/FeedbackMsg.msg"
+  "srv/Approach.srv"
+  "srv/Optimize.srv"
+  "srv/GetPlanning.srv"
+  "srv/SetPlanning.srv"
+  "srv/GetOptimVel.srv"
 )
 
 # Message generation
 rosidl_generate_interfaces(${PROJECT_NAME}
   ${msg_files}
-  DEPENDENCIES geometry_msgs nav_msgs std_msgs
+  DEPENDENCIES geometry_msgs nav_msgs std_msgs costmap_converter costmap_converter_msgs
 )
 
 # Export dependencies to downstream packages

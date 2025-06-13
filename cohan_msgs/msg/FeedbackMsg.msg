@@ -4,12 +4,12 @@
 std_msgs/Header header
 
 # The planned trajectory (or if multiple plans exist, all of them)
-hateb_local_planner/TrajectoryMsg[] trajectories
+cohan_msgs/TrajectoryMsg[] trajectories
 
 # Index of the trajectory in 'trajectories' that is selected currently
 uint16 selected_trajectory_idx
 
 # List of active obstacles
-costmap_converter/ObstacleArrayMsg obstacles_msg
+costmap_converter_msgs/ObstacleArrayMsg obstacles_msg
 
 
