@@ -36,7 +36,7 @@
  * Author: Christoph Rösmann
  *********************************************************************/
 
-#include <hateb_local_planner/recovery_behaviors.h>
+#include <recovery_behaviors.h>
 #include <ros/ros.h>
 #include <limits>
 #include <functional>

@@ -35,7 +35,8 @@
  * Author: Phani Teja Singamaneni (email:ptsingaman@laas.fr)
  *********************************************************************/
 
-#include <hateb_local_planner/backoff.h>
+#include <backoff.h>
+
 #define NODE_NAME "Backoff_recovery"
 #define ROBOT_FRAME_ID "base_footprint"
 #define CURRENT_GOAL_TOPIC_NAME "/move_base/current_goal"

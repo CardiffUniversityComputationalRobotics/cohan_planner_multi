@@ -48,21 +48,21 @@
 
 #include <boost/shared_ptr.hpp>
 
-#include <visualization_msgs/Marker.h>
-#include <geometry_msgs/Point.h>
-#include <std_msgs/ColorRGBA.h>
+#include <visualization_msgs/msg/marker.hpp>
+#include <geometry_msgs/msg/point.hpp>
+#include <std_msgs/msg/color_rgba.hpp>
 
 #include <ros/console.h>
 #include <ros/ros.h>
 
-#include <hateb_local_planner/planner_interface.h>
-#include <hateb_local_planner/hateb_config.h>
-#include <hateb_local_planner/obstacles.h>
-#include <hateb_local_planner/optimal_planner.h>
-#include <hateb_local_planner/visualization.h>
-#include <hateb_local_planner/robot_footprint_model.h>
-#include <hateb_local_planner/equivalence_relations.h>
-#include <hateb_local_planner/graph_search.h>
+#include <planner_interface.h>
+#include <hateb_config.h>
+#include <obstacles.h>
+#include <optimal_planner.h>
+#include <visualization.h>
+#include <robot_footprint_model.h>
+#include <equivalence_relations.h>
+#include <graph_search.h>
 
 namespace hateb_local_planner
 {

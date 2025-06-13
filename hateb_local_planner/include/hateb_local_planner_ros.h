@@ -50,10 +50,10 @@
 #include <base_local_planner/costmap_model.h>
 
 // timed-elastic-band related classes
-#include <hateb_local_planner/optimal_planner.h>
-#include <hateb_local_planner/homotopy_class_planner.h>
-#include <hateb_local_planner/visualization.h>
-#include <hateb_local_planner/recovery_behaviors.h>
+#include <optimal_planner.h>
+#include <homotopy_class_planner.h>
+#include <visualization.h>
+#include <recovery_behaviors.h>
 
 // message types
 #include <nav_msgs/Path.h>

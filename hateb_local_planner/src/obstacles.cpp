@@ -36,7 +36,7 @@
  * Author: Christoph Rösmann
  *********************************************************************/
 
-#include <hateb_local_planner/obstacles.h>
+#include <obstacles.h>
 #include <ros/console.h>
 #include <ros/assert.h>
 // #include <hateb_local_planner/misc.h>

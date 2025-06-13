@@ -38,7 +38,6 @@
 #define BACKOFF_H_
 
 #include <ros/ros.h>
-#include <dynamic_reconfigure/server.h>
 #include <tf/transform_listener.h>
 #include <std_srvs/SetBool.h>
 #include <std_srvs/Trigger.h>

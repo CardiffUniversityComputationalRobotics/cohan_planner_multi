@@ -55,7 +55,7 @@
 #define DEFAULT_AGENT_SEGMENT cohan_msgs::TrackedSegmentType::TORSO
 #define THROTTLE_RATE 5.0 // seconds
 
-#include <hateb_local_planner/hateb_local_planner_ros.h>
+#include <hateb_local_planner_ros.h>
 
 #include <tf2_eigen/tf2_eigen.h>
 #include <tf2_geometry_msgs/tf2_geometry_msgs.h>

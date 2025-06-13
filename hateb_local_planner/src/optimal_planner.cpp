@@ -41,7 +41,7 @@
  *********************************************************************/
 
 #define THROTTLE_RATE 1.0 // seconds
-#include <hateb_local_planner/optimal_planner.h>
+#include <optimal_planner.h>
 #include <map>
 #include <memory>
 #include <limits>

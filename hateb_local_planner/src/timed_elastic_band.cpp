@@ -40,7 +40,7 @@
  * Modified by: Phani Teja Singamaneni
  *********************************************************************/
 
-#include <hateb_local_planner/timed_elastic_band.h>
+#include <timed_elastic_band.h>
 
 namespace hateb_local_planner
 {

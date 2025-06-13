@@ -36,8 +36,8 @@
  * Authors: Christoph Rösmann, Franz Albers
  *********************************************************************/
 
-#include <hateb_local_planner/graph_search.h>
-#include <hateb_local_planner/homotopy_class_planner.h>
+#include <graph_search.h>
+#include <homotopy_class_planner.h>
 
 namespace hateb_local_planner
 {

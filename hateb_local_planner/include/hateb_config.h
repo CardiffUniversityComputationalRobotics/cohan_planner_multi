@@ -45,8 +45,6 @@
 #include <Eigen/Core>
 #include <Eigen/StdVector>
 
-#include <hateb_local_planner/HATebLocalPlannerReconfigureConfig.h>
-
 // Definitions
 #define USE_ANALYTIC_JACOBI // if available for a specific edge, use analytic jacobi
 

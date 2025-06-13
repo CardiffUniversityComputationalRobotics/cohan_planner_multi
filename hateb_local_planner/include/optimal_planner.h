@@ -43,12 +43,12 @@
 #include <math.h>
 
 // teb stuff
-#include <hateb_local_planner/hateb_config.h>
-#include <hateb_local_planner/misc.h>
-#include <hateb_local_planner/timed_elastic_band.h>
-#include <hateb_local_planner/planner_interface.h>
-#include <hateb_local_planner/visualization.h>
-#include <hateb_local_planner/robot_footprint_model.h>
+#include <hateb_config.h>
+#include <misc.h>
+#include <timed_elastic_band.h>
+#include <planner_interface.h>
+#include <visualization.h>
+#include <robot_footprint_model.h>
 
 // g2o lib stuff
 #include <g2o/core/sparse_optimizer.h>

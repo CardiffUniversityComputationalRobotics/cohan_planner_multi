@@ -36,7 +36,7 @@
  * Author: Christoph Rösmann
  *********************************************************************/
 
-#include <hateb_local_planner/homotopy_class_planner.h>
+#include <homotopy_class_planner.h>
 
 #include <limits>
 

@@ -44,11 +44,14 @@
 #include <boost/shared_ptr.hpp>
 
 // ros
-#include <tf/transform_datatypes.h>
+#include <tf2_ros/transform_listener.h>
+#include <tf2_ros/buffer.h>
+#include <tf2_ros/message_filter.h>
+#include <tf2_geometry_msgs/tf2_geometry_msgs.hpp>
 #include <base_local_planner/costmap_model.h>
 
 // this package
-#include <hateb_local_planner/pose_se2.h>
+#include <pose_se2.h>
 
 // messages
 #include <geometry_msgs/PoseArray.h>

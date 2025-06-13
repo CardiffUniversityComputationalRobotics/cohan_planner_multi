@@ -40,7 +40,7 @@
  * Modified by: Phani Teja Singamaneni
  *********************************************************************/
 
-#include <hateb_local_planner/hateb_config.h>
+#include <hateb_config.h>
 
 namespace hateb_local_planner
 {

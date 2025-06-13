@@ -58,9 +58,10 @@
 #define AGENT_TRAJS_TIME_TOPIC "agents_trajs_time"
 #define AGENT_PATHS_TIME_TOPIC "agents_plans_time"
 #define DEFAUTL_SEGMENT_TYPE cohan_msgs::TrackedSegmentType::TORSO
-#include <hateb_local_planner/FeedbackMsg.h>
-#include <hateb_local_planner/optimal_planner.h>
-#include <hateb_local_planner/visualization.h>
+
+#include <optimal_planner.h>
+#include <visualization.h>
+#include <cphan_msgs/msg/feedback_msg.hpp>
 #include <cohan_msgs/TrackedAgents.h>
 #include <cohan_msgs/TrackedSegmentType.h>
 
