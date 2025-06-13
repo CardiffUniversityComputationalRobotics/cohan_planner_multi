@@ -28,12 +28,12 @@ find_package(Eigen3 REQUIRED)
 find_package(Boost REQUIRED COMPONENTS system thread)
 # find_package(G2O REQUIRED)
 # find_package(SUITESPARSE REQUIRED)
-find_package(rosidl_default_generators REQUIRED)
 
 # Custom dependencies
 find_package(cohan_msgs REQUIRED)
 # find_package(agent_path_prediction REQUIRED)
 find_package(costmap_converter REQUIRED)
+find_package(costmap_converter_msgs REQUIRED)
 
 if(NOT G2O_INCLUDE_DIRS)
   set(G2O_INCLUDE_DIRS /usr/include/g2o)
@@ -48,21 +48,6 @@ endif()
 
 install(DIRECTORY launch rviz DESTINATION share/${PROJECT_NAME})
 
-# Message generation
-rosidl_generate_interfaces(${PROJECT_NAME}
-  "msg/ObstacleMsg.msg"
-  "msg/OptimizationCost.msg"
-  "msg/OptimizationCostArray.msg"
-  "msg/TrajectoryPointMsg.msg"
-  "msg/TrajectoryMsg.msg"
-  # "msg/FeedbackMsg.msg"
-  "srv/Approach.srv"
-  "srv/Optimize.srv"
-  "srv/GetPlanning.srv"
-  "srv/SetPlanning.srv"
-  "srv/GetOptimVel.srv"
-  DEPENDENCIES geometry_msgs std_msgs costmap_converter cohan_msgs
-)
 
 # Include directories
 include_directories(
@@ -95,21 +80,27 @@ set(dependencies
 # set(EXTERNAL_LIBS ${SUITESPARSE_LIBRARIES} ${G2O_LIBRARIES} ${Boost_LIBRARIES})
 set(EXTERNAL_LIBS ${G2O_LIBRARIES} ${Boost_LIBRARIES})
 
-# add_executable(hateb_local_planner
-#   src/hateb_local_planner_ros.cpp
-#   src/timed_elastic_band.cpp
-#   src/optimal_planner.cpp
-#   src/obstacles.cpp
-#   src/visualization.cpp
-#   src/recovery_behaviors.cpp
-#   src/hateb_config.cpp
-#   src/homotopy_class_planner.cpp
-#   src/graph_search.cpp
-#   src/backoff.cpp
-# )
+add_executable(hateb_local_planner_node
+  src/hateb_local_planner_ros.cpp
+  src/timed_elastic_band.cpp
+  src/optimal_planner.cpp
+  src/obstacles.cpp
+  src/visualization.cpp
+  src/recovery_behaviors.cpp
+  src/hateb_config.cpp
+  src/homotopy_class_planner.cpp
+  src/graph_search.cpp
+  src/backoff.cpp
+)
 
-# ament_target_dependencies(hateb_local_planner ${dependencies})
-# target_link_libraries(hateb_local_planner ${EXTERNAL_LIBS})
+ament_target_dependencies(hateb_local_planner_node ${dependencies})
+target_link_libraries(hateb_local_planner_node ${EXTERNAL_LIBS})
+
+# Install targets
+install(TARGETS
+  hateb_local_planner_node
+  DESTINATION lib/${PROJECT_NAME}
+)
 
 # add_executable(test_optim_node src/test_optim_node.cpp)
 # target_link_libraries(test_optim_node hateb_local_planner ${EXTERNAL_LIBS})
@@ -126,11 +117,7 @@ set(EXTERNAL_LIBS ${G2O_LIBRARIES} ${Boost_LIBRARIES})
 #   # agent_path_prediction
 # )
 
-# Install targets
-# install(TARGETS
-#   hateb_local_planner
-#   DESTINATION lib/${PROJECT_NAME}
-# )
+
 
 # install(DIRECTORY include/${PROJECT_NAME}/
 #   DESTINATION include/
