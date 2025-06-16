@@ -49,9 +49,9 @@
 #include <boost/shared_ptr.hpp>
 #include <boost/pointer_cast.hpp>
 
-#include <geometry_msgs/Polygon.h>
-#include <geometry_msgs/TwistWithCovariance.h>
-#include <geometry_msgs/QuaternionStamped.h>
+#include <geometry_msgs/msg/polygon.hpp>
+#include <geometry_msgs/msg/twist_with_covariance.hpp>
+#include <geometry_msgs/msg/quaternion_stamped.hpp>
 
 #include <tf2_ros/transform_listener.h>
 #include <tf2_ros/buffer.h>
@@ -219,8 +219,8 @@ namespace hateb_local_planner
      * @param velocity geometry_msgs::TwistWithCovariance containing the velocity of the obstacle
      * @param orientation geometry_msgs::QuaternionStamped containing the orientation of the obstacle
      */
-    void setCentroidVelocity(const geometry_msgs::TwistWithCovariance &velocity,
-                             const geometry_msgs::Quaternion &orientation)
+    void setCentroidVelocity(const geometry_msgs::msg::TwistWithCovariance &velocity,
+                             const geometry_msgs::msg::Quaternion &orientation)
     {
       // Set velocity, if obstacle is moving
       Eigen::Vector2d vel;
@@ -240,8 +240,8 @@ namespace hateb_local_planner
       setCentroidVelocity(vel);
     }
 
-    void setCentroidVelocity(const geometry_msgs::TwistWithCovariance &velocity,
-                             const geometry_msgs::QuaternionStamped &orientation)
+    void setCentroidVelocity(const geometry_msgs::msg::TwistWithCovariance &velocity,
+                             const geometry_msgs::msg::QuaternionStamped &orientation)
     {
       setCentroidVelocity(velocity, orientation.quaternion);
     }
@@ -265,9 +265,9 @@ namespace hateb_local_planner
      * and polygons might are implictly closed such that the start vertex must not be repeated.
      * @param[out] polygon the polygon message
      */
-    virtual void toPolygonMsg(geometry_msgs::Polygon &polygon) = 0;
+    virtual void toPolygonMsg(geometry_msgs::msg::Polygon &polygon) = 0;
 
-    virtual void toTwistWithCovarianceMsg(geometry_msgs::TwistWithCovariance &twistWithCovariance)
+    virtual void toTwistWithCovarianceMsg(geometry_msgs::msg::TwistWithCovariance &twistWithCovariance)
     {
       if (dynamic_)
       {
@@ -433,7 +433,7 @@ namespace hateb_local_planner
     const double &y() const { return pos_.coeffRef(1); }     //!< Return the current y-coordinate of the obstacle (read-only)
 
     // implements toPolygonMsg() of the base class
-    virtual void toPolygonMsg(geometry_msgs::Polygon &polygon)
+    virtual void toPolygonMsg(geometry_msgs::msg::Polygon &polygon)
     {
       polygon.points.resize(1);
       polygon.points.front().x = pos_.x();
@@ -578,7 +578,7 @@ namespace hateb_local_planner
     const double &radius() const { return radius_; }         //!< Return the current radius of the obstacle
 
     // implements toPolygonMsg() of the base class
-    virtual void toPolygonMsg(geometry_msgs::Polygon &polygon)
+    virtual void toPolygonMsg(geometry_msgs::msg::Polygon &polygon)
     {
       // TODO(roesmann): the polygon message type cannot describe a "perfect" circle
       //                 We could switch to ObstacleMsg if required somewhere...
@@ -734,7 +734,7 @@ namespace hateb_local_planner
     }
 
     // implements toPolygonMsg() of the base class
-    virtual void toPolygonMsg(geometry_msgs::Polygon &polygon)
+    virtual void toPolygonMsg(geometry_msgs::msg::Polygon &polygon)
     {
       polygon.points.resize(2);
       polygon.points.front().x = start_.x();
@@ -901,7 +901,7 @@ namespace hateb_local_planner
     }
 
     // implements toPolygonMsg() of the base class
-    virtual void toPolygonMsg(geometry_msgs::Polygon &polygon);
+    virtual void toPolygonMsg(geometry_msgs::msg::Polygon &polygon);
 
     /** @name Define the polygon */
     ///@{

@@ -41,7 +41,7 @@
 #define DISTANCE_CALCULATIONS_H
 
 #include <Eigen/Core>
-#include <hateb_local_planner/misc.h>
+#include <misc.h>
 
 namespace hateb_local_planner
 {
