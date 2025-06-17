@@ -74,7 +74,8 @@ namespace hateb_local_planner
 
   TimedElasticBand::~TimedElasticBand()
   {
-    ROS_DEBUG("Destructor Timed_Elastic_Band...");
+    RCLCPP_DEBUG(rclcpp::get_logger("timed_elastic_band_hateb"),
+                 "Destructor Timed_Elastic_Band...");
     clearTimedElasticBand();
   }
 
@@ -101,7 +102,7 @@ namespace hateb_local_planner
 
   void TimedElasticBand::addTimeDiff(double dt, bool fixed)
   {
-    ROS_ASSERT_MSG(dt > 0., "Adding a timediff requires a positive dt");
+    assert(dt > 0.);
     VertexTimeDiff *timediff_vertex = new VertexTimeDiff(dt, fixed);
     timediff_vec_.push_back(timediff_vertex);
     return;
@@ -115,7 +116,8 @@ namespace hateb_local_planner
       addTimeDiff(dt, false);
     }
     else
-      ROS_ERROR("Method addPoseAndTimeDiff: Add one single Pose first. Timediff describes the time difference between last conf and given conf");
+      RCLCPP_ERROR(rclcpp::get_logger("timed_elastic_band_hateb"),
+                   "Method addPoseAndTimeDiff: Add one single Pose first. Timediff describes the time difference between last conf and given conf");
     return;
   }
 
@@ -127,7 +129,8 @@ namespace hateb_local_planner
       addTimeDiff(dt, false);
     }
     else
-      ROS_ERROR("Method addPoseAndTimeDiff: Add one single Pose first. Timediff describes the time difference between last conf and given conf");
+      RCLCPP_ERROR(rclcpp::get_logger("timed_elastic_band_hateb"),
+                   "Method addPoseAndTimeDiff: Add one single Pose first. Timediff describes the time difference between last conf and given conf");
     return;
   }
 
@@ -139,20 +142,21 @@ namespace hateb_local_planner
       addTimeDiff(dt, false);
     }
     else
-      ROS_ERROR("Method addPoseAndTimeDiff: Add one single Pose first. Timediff describes the time difference between last conf and given conf");
+      RCLCPP_ERROR(rclcpp::get_logger("timed_elastic_band_hateb"),
+                   "Method addPoseAndTimeDiff: Add one single Pose first. Timediff describes the time difference between last conf and given conf");
     return;
   }
 
   void TimedElasticBand::deletePose(unsigned int index)
   {
-    ROS_ASSERT(index < pose_vec_.size());
+    assert(index < pose_vec_.size());
     delete pose_vec_.at(index);
     pose_vec_.erase(pose_vec_.begin() + index);
   }
 
   void TimedElasticBand::deletePoses(unsigned int index, unsigned int number)
   {
-    ROS_ASSERT(index + number <= pose_vec_.size());
+    assert(index + number <= pose_vec_.size());
     for (unsigned int i = index; i < index + number; ++i)
       delete pose_vec_.at(i);
     pose_vec_.erase(pose_vec_.begin() + index, pose_vec_.begin() + index + number);
@@ -160,14 +164,14 @@ namespace hateb_local_planner
 
   void TimedElasticBand::deleteTimeDiff(unsigned int index)
   {
-    ROS_ASSERT(index < timediff_vec_.size());
+    assert(index < timediff_vec_.size());
     delete timediff_vec_.at(index);
     timediff_vec_.erase(timediff_vec_.begin() + index);
   }
 
   void TimedElasticBand::deleteTimeDiffs(unsigned int index, unsigned int number)
   {
-    ROS_ASSERT(index + number <= timediff_vec_.size());
+    assert(index + number <= timediff_vec_.size());
     for (unsigned int i = index; i < index + number; ++i)
       delete timediff_vec_.at(i);
     timediff_vec_.erase(timediff_vec_.begin() + index, timediff_vec_.begin() + index + number);
@@ -210,19 +214,19 @@ namespace hateb_local_planner
 
   void TimedElasticBand::setPoseVertexFixed(unsigned int index, bool status)
   {
-    ROS_ASSERT(index < sizePoses());
+    assert(index < sizePoses());
     pose_vec_.at(index)->setFixed(status);
   }
 
   void TimedElasticBand::setTimeDiffVertexFixed(unsigned int index, bool status)
   {
-    ROS_ASSERT(index < sizeTimeDiffs());
+    assert(index < sizeTimeDiffs());
     timediff_vec_.at(index)->setFixed(status);
   }
 
   void TimedElasticBand::autoResize(double dt_ref, double dt_hysteresis, int min_samples)
   {
-    ROS_ASSERT(sizeTimeDiffs() == 0 || sizeTimeDiffs() + 1 == sizePoses());
+    assert(sizeTimeDiffs() == 0 || sizeTimeDiffs() + 1 == sizePoses());
     /// iterate through all TEB states only once and add/remove states!
     for (unsigned int i = 0; i < sizeTimeDiffs(); ++i) // TimeDiff connects Point(i) with Point(i+1)
     {
@@ -309,7 +313,8 @@ namespace hateb_local_planner
       // if number of samples is not larger than min_samples, insert manually
       if ((int)sizePoses() < min_samples - 1)
       {
-        ROS_DEBUG("initTEBtoGoal(): number of generated samples is less than specified by min_samples. Forcing the insertion of more samples...");
+        RCLCPP_DEBUG(rclcpp::get_logger("timed_elastic_band_hateb"),
+                     "initTEBtoGoal(): number of generated samples is less than specified by min_samples. Forcing the insertion of more samples...");
         while ((int)sizePoses() < min_samples - 1) // subtract goal point that will be added later
         {
           // simple strategy: interpolate between the current pose and the goal
@@ -323,20 +328,22 @@ namespace hateb_local_planner
     }
     else // size!=0
     {
-      ROS_WARN("Cannot init TEB between given configuration and goal, because TEB vectors are not empty or TEB is already initialized (call this function before adding states yourself)!");
-      ROS_WARN("Number of TEB configurations: %d, Number of TEB timediffs: %d", (unsigned int)sizePoses(), (unsigned int)sizeTimeDiffs());
+      RCLCPP_WARN(rclcpp::get_logger("timed_elastic_band_hateb"),
+                  "Cannot init TEB between given configuration and goal, because TEB vectors are not empty or TEB is already initialized (call this function before adding states yourself)!");
+      RCLCPP_WARN(rclcpp::get_logger("timed_elastic_band_hateb"),
+                  "Number of TEB configurations: %d, Number of TEB timediffs: %d", (unsigned int)sizePoses(), (unsigned int)sizeTimeDiffs());
       return false;
     }
     return true;
   }
 
-  bool TimedElasticBand::initTEBtoGoal(const std::vector<geometry_msgs::PoseStamped> &plan, double dt, bool estimate_orient, int min_samples, double skip_dist)
+  bool TimedElasticBand::initTEBtoGoal(const std::vector<geometry_msgs::msg::PoseStamped> &plan, double dt, bool estimate_orient, int min_samples, double skip_dist)
   {
 
     if (!isInit())
     {
-      addPose(plan.front().pose.position.x, plan.front().pose.position.y, tf::getYaw(plan.front().pose.orientation)); // add starting point with given orientation
-      setPoseVertexFixed(0, true);                                                                                    // StartConf is a fixed constraint during optimization
+      addPose(plan.front().pose.position.x, plan.front().pose.position.y, tf2::getYaw(plan.front().pose.orientation)); // add starting point with given orientation
+      setPoseVertexFixed(0, true);                                                                                     // StartConf is a fixed constraint during optimization
 
       unsigned int last_i = 0;
       for (unsigned int i = 1; i < plan.size() - 1; ++i)
@@ -363,7 +370,7 @@ namespace hateb_local_planner
         }
         else
         {
-          yaw = tf::getYaw(plan[i].pose.orientation);
+          yaw = tf2::getYaw(plan[i].pose.orientation);
         }
         // double dt = estimateDeltaT(BackPose(), intermediate_pose, max_vel_x, max_vel_theta);
         addPoseAndTimeDiff(plan[i].pose.position.x, plan[i].pose.position.y, yaw, dt);
@@ -374,7 +381,8 @@ namespace hateb_local_planner
       // if number of samples is not larger than min_samples, insert manually
       if ((int)sizePoses() < min_samples - 1)
       {
-        ROS_DEBUG("initTEBtoGoal(): number of generated samples is less than specified by min_samples. Forcing the insertion of more samples...");
+        RCLCPP_DEBUG(rclcpp::get_logger("timed_elastic_band_hateb"),
+                     "initTEBtoGoal(): number of generated samples is less than specified by min_samples. Forcing the insertion of more samples...");
         while ((int)sizePoses() < min_samples - 1) // subtract goal point that will be added later
         {
           // simple strategy: interpolate between the current pose and the goal
@@ -390,8 +398,10 @@ namespace hateb_local_planner
     }
     else // size!=0
     {
-      ROS_WARN("Cannot init TEB between given configuration and goal, because TEB vectors are not empty or TEB is already initialized (call this function before adding states yourself)!");
-      ROS_WARN("Number of TEB configurations: %d, Number of TEB timediffs: %d", (unsigned int)sizePoses(), (unsigned int)sizeTimeDiffs());
+      RCLCPP_WARN(rclcpp::get_logger("timed_elastic_band_hateb"),
+                  "Cannot init TEB between given configuration and goal, because TEB vectors are not empty or TEB is already initialized (call this function before adding states yourself)!");
+      RCLCPP_WARN(rclcpp::get_logger("timed_elastic_band_hateb"),
+                  "Number of TEB configurations: %d, Number of TEB timediffs: %d", (unsigned int)sizePoses(), (unsigned int)sizeTimeDiffs());
       return false;
     }
     return true;
@@ -544,7 +554,8 @@ namespace hateb_local_planner
       Eigen::Vector2d orient_vector(cos(Pose(i).theta()), sin(Pose(i).theta()));
       if (orient_vector.dot(d_start_goal) < threshold)
       {
-        ROS_DEBUG("detectDetoursBackwards() - mark TEB for deletion: start-orientation vs startgoal-vec");
+        RCLCPP_DEBUG(rclcpp::get_logger("timed_elastic_band_hateb"),
+                     "detectDetoursBackwards() - mark TEB for deletion: start-orientation vs startgoal-vec");
         return true; // backward direction found
       }
     }
@@ -613,7 +624,7 @@ namespace hateb_local_planner
 
   double TimedElasticBand::getSumOfTimeDiffsUpToIdx(int index) const
   {
-    ROS_ASSERT(index <= timediff_vec_.size());
+    assert(index <= timediff_vec_.size());
 
     double time = 0;
 

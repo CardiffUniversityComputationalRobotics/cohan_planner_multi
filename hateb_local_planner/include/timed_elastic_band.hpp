@@ -37,7 +37,7 @@
  * Minor Modifications by: Phani Teja Singamaneni
  *********************************************************************/
 
-#include <hateb_local_planner/timed_elastic_band.h>
+#include <timed_elastic_band.h>
 
 namespace hateb_local_planner
 {
@@ -48,7 +48,7 @@ namespace hateb_local_planner
                                        boost::optional<double> start_orientation, boost::optional<double> goal_orientation, int min_samples)
   {
     Eigen::Vector2d start_position = fun_position(*path_start);
-    Eigen::Vector2d goal_position = fun_position(*boost::prior(path_end));
+    Eigen::Vector2d goal_position = fun_position(*std::prev(path_end));
 
     double start_orient, goal_orient;
     if (start_orientation)
@@ -107,7 +107,7 @@ namespace hateb_local_planner
 
         addPoseAndTimeDiff(curr_point, atan2(diff_last[1], diff_last[0]), timestep);
 
-        Eigen::Vector2d diff_next = fun_position(*boost::next(path_start)) - curr_point; // TODO maybe store the boost::next for the following iteration
+        Eigen::Vector2d diff_next = fun_position(*std::next(path_start)) - curr_point; // TODO maybe store the boost::next for the following iteration
         double ang_diff = std::abs(g2o::normalize_theta(atan2(diff_next[1], diff_next[0]) - atan2(diff_last[1], diff_last[0])));
 
         timestep_vel = ang_diff / max_vel_theta; // constant velocity
@@ -148,7 +148,8 @@ namespace hateb_local_planner
       // if number of samples is not larger than min_samples, insert manually
       if ((int)sizePoses() < min_samples - 1)
       {
-        ROS_DEBUG("initTEBtoGoal(): number of generated samples is less than specified by min_samples. Forcing the insertion of more samples...");
+        RCLCPP_DEBUG(rclcpp::get_logger("timed_elastic_band_hateb"),
+                     "initTEBtoGoal(): number of generated samples is less than specified by min_samples. Forcing the insertion of more samples...");
         while ((int)sizePoses() < min_samples - 1) // subtract goal point that will be added later
         {
           // simple strategy: interpolate between the current pose and the goal
@@ -162,8 +163,10 @@ namespace hateb_local_planner
     }
     else // size!=0
     {
-      ROS_WARN("Cannot init TEB between given configuration and goal, because TEB vectors are not empty or TEB is already initialized (call this function before adding states yourself)!");
-      ROS_WARN("Number of TEB configurations: %d, Number of TEB timediffs: %d", (unsigned int)sizePoses(), (unsigned int)sizeTimeDiffs());
+      RCLCPP_WARN(rclcpp::get_logger("timed_elastic_band_hateb"),
+                  "Cannot init TEB between given configuration and goal, because TEB vectors are not empty or TEB is already initialized (call this function before adding states yourself)!");
+      RCLCPP_WARN(rclcpp::get_logger("timed_elastic_band_hateb"),
+                  "Number of TEB configurations: %d, Number of TEB timediffs: %d", (unsigned int)sizePoses(), (unsigned int)sizeTimeDiffs());
       return false;
     }
     return true;
