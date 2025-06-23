@@ -44,15 +44,20 @@
 #define VISUALIZATION_H_
 
 // teb stuff
-#include <hateb_local_planner/TrajectoryMsg.h>
-#include <hateb_local_planner/robot_footprint_model.h>
-#include <hateb_local_planner/hateb_config.h>
-#include <hateb_local_planner/timed_elastic_band.h>
+#include <cohan_msgs/msg/trajectory_msg.hpp>
+#include <robot_footprint_model.h>
+#include <timed_elastic_band.h>
 
-// ros stuff
-#include <base_local_planner/goal_functions.h>
-#include <ros/publisher.h>
-#include <tf/transform_listener.h>
+// ROS 2
+#include <rclcpp/rclcpp.hpp>
+#include <tf2_ros/buffer.h>
+#include <tf2_ros/transform_listener.h>
+
+// std
+#include <iterator>
+#include <map>
+#include <vector>
+#include <string>
 
 // boost
 #include <boost/graph/adjacency_list.hpp>
@@ -62,53 +67,53 @@
 #include <iterator>
 
 // messages
-#include <geometry_msgs/PoseArray.h>
-#include <geometry_msgs/PoseStamped.h>
-#include <cohan_msgs/AgentPathArray.h>
-#include <cohan_msgs/AgentTimeToGoal.h>
-#include <cohan_msgs/AgentTimeToGoalArray.h>
-#include <cohan_msgs/AgentTrajectoryArray.h>
-#include <cohan_msgs/TrackedAgents.h>
-#include <cohan_msgs/TrackedSegmentType.h>
-#include <std_msgs/ColorRGBA.h>
-#include <std_msgs/Float32.h>
-#include <nav_msgs/Odometry.h>
-#include <nav_msgs/Path.h>
-#include <tf/transform_datatypes.h>
-#include <visualization_msgs/Marker.h>
-#include <visualization_msgs/MarkerArray.h>
+#include <geometry_msgs/msg/pose_array.hpp>
+#include <geometry_msgs/msg/pose_stamped.hpp>
+#include <cohan_msgs/msg/agent_path_array.hpp>
+#include <cohan_msgs/msg/agent_time_to_goal.hpp>
+#include <cohan_msgs/msg/agent_time_to_goal_array.hpp>
+#include <cohan_msgs/msg/agent_trajectory_array.hpp>
+#include <cohan_msgs/msg/tracked_agents.hpp>
+#include <cohan_msgs/msg/tracked_segment_type.hpp>
+#include <cohan_msgs/msg/feedback_msg.hpp>
+#include <std_msgs/msg/color_rgba.hpp>
+#include <std_msgs/msg/float32.hpp>
+#include <nav_msgs/msg/odometry.hpp>
+#include <nav_msgs/msg/path.hpp>
+#include <visualization_msgs/msg/marker.hpp>
+#include <visualization_msgs/msg/marker_array.hpp>
 
 namespace hateb_local_planner
 {
 
   typedef struct
   {
-    std::vector<geometry_msgs::PoseStamped> plan_before;
-    std::vector<TrajectoryPointMsg> optimized_trajectory;
-    std::vector<geometry_msgs::PoseStamped> plan_after;
+    std::vector<geometry_msgs::msg::PoseStamped> plan_before;
+    std::vector<cohan_msgs::msg::TrajectoryPointMsg> optimized_trajectory;
+    std::vector<geometry_msgs::msg::PoseStamped> plan_after;
   } PlanTrajCombined;
 
   typedef struct
   {
-    std::vector<geometry_msgs::PoseStamped> plan_before;
-    std::vector<geometry_msgs::PoseStamped> plan_to_optimize;
-    std::vector<geometry_msgs::PoseStamped> plan_after;
+    std::vector<geometry_msgs::msg::PoseStamped> plan_before;
+    std::vector<geometry_msgs::msg::PoseStamped> plan_to_optimize;
+    std::vector<geometry_msgs::msg::PoseStamped> plan_after;
   } PlanCombined;
 
   typedef struct
   {
     uint64_t id;
-    std::vector<geometry_msgs::PoseStamped> plan_before;
-    std::vector<TrajectoryPointMsg> optimized_trajectory;
-    std::vector<geometry_msgs::PoseStamped> plan_after;
+    std::vector<geometry_msgs::msg::PoseStamped> plan_before;
+    std::vector<cohan_msgs::msg::TrajectoryPointMsg> optimized_trajectory;
+    std::vector<geometry_msgs::msg::PoseStamped> plan_after;
   } AgentPlanTrajCombined;
 
   typedef struct
   {
     uint64_t id;
-    std::vector<geometry_msgs::PoseStamped> plan_before;
-    std::vector<geometry_msgs::PoseStamped> plan_to_optimize;
-    std::vector<geometry_msgs::PoseStamped> plan_after;
+    std::vector<geometry_msgs::msg::PoseStamped> plan_before;
+    std::vector<geometry_msgs::msg::PoseStamped> plan_to_optimize;
+    std::vector<geometry_msgs::msg::PoseStamped> plan_after;
   } AgentPlanCombined;
 
   class TebOptimalPlanner; //!< Forward Declaration
@@ -124,23 +129,23 @@ namespace hateb_local_planner
      * @brief Default constructor
      * @remarks do not forget to call initialize()
      */
-    TebVisualization();
+    // TebVisualization();
 
     /**
      * @brief Constructor that initializes the class and registers topics
-     * @param nh local ros::NodeHandle
+     * @param node local ros::NodeHandle
      * @param cfg const reference to the HATebConfig class for parameters
      */
-    TebVisualization(ros::NodeHandle &nh, const HATebConfig &cfg);
+    TebVisualization(const rclcpp::Node::SharedPtr &node);
 
     /**
      * @brief Initializes the class and registers topics.
      *
      * Call this function if only the default constructor has been called before.
-     * @param nh local ros::NodeHandle
+     * @param node local ros::NodeHandle
      * @param cfg const reference to the HATebConfig class for parameters
      */
-    void initialize(ros::NodeHandle &nh, const HATebConfig &cfg);
+    void initialize();
 
     /** @name Publish to topics */
     //@{
@@ -149,16 +154,16 @@ namespace hateb_local_planner
      * @brief Publish a given global plan to the ros topic \e ../../global_plan
      * @param global_plan Pose array describing the global plan
      */
-    void publishGlobalPlan(const std::vector<geometry_msgs::PoseStamped> &global_plan) const;
+    void publishGlobalPlan(const std::vector<geometry_msgs::msg::PoseStamped> &global_plan) const;
     void publishAgentGlobalPlans(const std::vector<AgentPlanCombined> &agents_plans) const;
 
     /**
      * @brief Publish a given local plan to the ros topic \e ../../local_plan
      * @param local_plan Pose array describing the local plan
      */
-    void publishLocalPlan(const std::vector<geometry_msgs::PoseStamped> &local_plan) const;
+    void publishLocalPlan(const std::vector<geometry_msgs::msg::PoseStamped> &local_plan) const;
 
-    void publishTrackedAgents(const cohan_msgs::TrackedAgentsConstPtr &agents);
+    void publishTrackedAgents(const cohan_msgs::msg::TrackedAgents::SharedPtr &agents);
 
     /**
      * @brief Publish Timed_Elastic_Band related stuff (local plan, pose sequence).
@@ -167,8 +172,8 @@ namespace hateb_local_planner
      * and the pose sequence to  \e ../../teb_poses.
      * @param teb const reference to a Timed_Elastic_Band
      */
-    void publishLocalPlanAndPoses(const TimedElasticBand &teb, const BaseRobotFootprintModel &robot_model, const double fp_size, const std_msgs::ColorRGBA &color = toColorMsg(0.5, 0.0, 0.8, 0.0));
-    void publishAgentLocalPlansAndPoses(const std::map<uint64_t, TimedElasticBand> &agents_tebs_map, const BaseRobotFootprintModel &agent_model, const double fp_size, const std_msgs::ColorRGBA &color = toColorMsg(0.5, 0.0, 0.8, 0.0));
+    void publishLocalPlanAndPoses(const TimedElasticBand &teb, const BaseRobotFootprintModel &robot_model, const double fp_size, const std_msgs::msg::ColorRGBA &color = toColorMsg(0.5, 0.0, 0.8, 0.0));
+    void publishAgentLocalPlansAndPoses(const std::map<uint64_t, TimedElasticBand> &agents_tebs_map, const BaseRobotFootprintModel &agent_model, const double fp_size, const std_msgs::msg::ColorRGBA &color = toColorMsg(0.5, 0.0, 0.8, 0.0));
 
     void publishTrajectory(const PlanTrajCombined &plan_traj_combined);
     void publishAgentTrajectories(const std::vector<AgentPlanTrajCombined> &agents_plans_combined);
@@ -182,7 +187,7 @@ namespace hateb_local_planner
      * @param color Color of the footprint
      */
     void publishRobotFootprintModel(const PoseSE2 &current_pose, const BaseRobotFootprintModel &robot_model, const std::string &ns = "RobotFootprintModel",
-                                    const std_msgs::ColorRGBA &color = toColorMsg(0.5, 0.0, 0.8, 0.0));
+                                    const std_msgs::msg::ColorRGBA &color = toColorMsg(0.5, 0.0, 0.8, 0.0));
 
     /**
      * @brief Publish the robot footprints related to infeasible poses
@@ -285,9 +290,9 @@ namespace hateb_local_planner
      * @param b Blue value
      * @return Color message
      */
-    static std_msgs::ColorRGBA toColorMsg(double a, double r, double g, double b);
+    static std_msgs::msg::ColorRGBA toColorMsg(double a, double r, double g, double b);
 
-    void setMarkerColour(visualization_msgs::Marker &marker, double itr, double n);
+    void setMarkerColour(visualization_msgs::msg::Marker &marker, double itr, double n);
     void publishMode(int Mode);
 
   protected:
@@ -297,38 +302,65 @@ namespace hateb_local_planner
      */
     bool printErrorWhenNotInitialized() const;
 
-    ros::Publisher global_plan_pub_; //!< Publisher for the global plan
-    ros::Publisher local_plan_pub_;  //!< Publisher for the local plan
-    ros::Publisher local_traj_pub_;
-    ros::Publisher agents_global_plans_pub_; //!< Publisher for the local plan
-    ros::Publisher agents_local_plans_pub_;  //!< Publisher for the local plan
-    ros::Publisher agents_local_trajs_pub_;
-    ros::Publisher teb_poses_pub_, teb_fp_poses_pub_;                 //!< Publisher for the trajectory pose sequence
-    ros::Publisher agents_tebs_poses_pub_, agents_tebs_fp_poses_pub_; //!< Publisher for the trajectory pose sequence
-    ros::Publisher teb_marker_pub_;                                   //!< Publisher for visualization markers
-    ros::Publisher feedback_pub_, mode_text_pub;                      //!< Publisher for the feedback message and mode for analysis and debug purposes
-    ros::Publisher robot_traj_time_pub_, robot_path_time_pub_;
-    ros::Publisher robot_next_pose_pub_, agent_next_pose_pub_; // Pulishers for pose tracking
-    ros::Publisher agent_trajs_time_pub_, agent_paths_time_pub_;
-    ros::Publisher agent_marker_pub, agent_arrow_pub;
-    ros::Subscriber tracked_agents_sub_;
+    rclcpp::Publisher<nav_msgs::msg::Path>::SharedPtr global_plan_pub_; //!< Publisher for the global plan
+    rclcpp::Publisher<nav_msgs::msg::Path>::SharedPtr local_plan_pub_;  //!< Publisher for the local plan
+    rclcpp::Publisher<cohan_msgs::msg::Trajectory>::SharedPtr local_traj_pub_;
+    rclcpp::Publisher<cohan_msgs::msg::AgentPathArray>::SharedPtr agents_global_plans_pub_; //!< Publisher for the local plan
+    rclcpp::Publisher<cohan_msgs::msg::AgentPathArray>::SharedPtr agents_local_plans_pub_;  //!< Publisher for the local plan
+    rclcpp::Publisher<cohan_msgs::msg::AgentTrajectoryArray>::SharedPtr agents_local_trajs_pub_;
+    rclcpp::Publisher<geometry_msgs::msg::PoseArray>::SharedPtr teb_poses_pub_;                   //!< Publisher for the trajectory pose sequence
+    rclcpp::Publisher<visualization_msgs::msg::MarkerArray>::SharedPtr teb_fp_poses_pub_;         //!< Publisher for the trajectory pose sequence
+    rclcpp::Publisher<geometry_msgs::msg::PoseArray>::SharedPtr agents_tebs_poses_pub_;           //!< Publisher for the trajectory pose sequence
+    rclcpp::Publisher<visualization_msgs::msg::MarkerArray>::SharedPtr agents_tebs_fp_poses_pub_; //!< Publisher for the trajectory pose sequence
+    rclcpp::Publisher<visualization_msgs::msg::Marker>::SharedPtr teb_marker_pub_;                //!< Publisher for visualization markers
+    rclcpp::Publisher<cohan_msgs::msg::FeedbackMsg>::SharedPtr feedback_pub_;                     //!< Publisher for the feedback message and mode for analysis and debug purposes
+    rclcpp::Publisher<visualization_msgs::msg::Marker>::SharedPtr mode_text_pub;                  //!< Publisher for the feedback message and mode for analysis and debug purposes
+    rclcpp::Publisher<cohan_msgs::msg::AgentTimeToGoal>::SharedPtr robot_traj_time_pub_, robot_path_time_pub_;
+    rclcpp::Publisher<geometry_msgs::msg::PoseStamped>::SharedPtr robot_next_pose_pub_, agent_next_pose_pub_;         // Pulishers for pose tracking
+    rclcpp::Publisher<cohan_msgs::msg::AgentTimeToGoalArray>::SharedPtr agent_trajs_time_pub_, agent_paths_time_pub_; // Pulishers for pose tracking
+    rclcpp::Publisher<visualization_msgs::msg::MarkerArray>::SharedPtr agent_marker_pub, agent_arrow_pub;
+    rclcpp::Subscription<cohan_msgs::msg::TrackedAgents>::SharedPtr tracked_agents_sub_;
+
     std::vector<double> vel_robot, vel_agent;
-    tf::TransformListener tf_;
-    ros::Publisher ttg_pub_;
+    rclcpp::Node::SharedPtr node_;
+
+    std::shared_ptr<tf2_ros::Buffer> tf_buffer_;
+    std::shared_ptr<tf2_ros::TransformListener> tf_listener_;
+
+    rclcpp::Publisher<std_msgs::msg::Float32>::SharedPtr ttg_pub_;
+
     std::string ns_; // Name space of the robot
 
-    const HATebConfig *cfg_; //!< Config class that stores and manages all related parameters
+    // const HATebConfig *cfg_; //!< Config class that stores and manages all related parameters
 
-    bool initialized_; //!< Keeps track about the correct initialization of this class
-    ros::Timer clearing_timer_;
-    void clearingTimerCB(const ros::TimerEvent &event);
-    bool last_publish_robot_global_plan, last_publish_robot_local_plan,
-        last_publish_robot_local_plan_poses,
-        last_publish_robot_local_plan_fp_poses, last_publish_agents_global_plans,
-        last_publish_agents_local_plans, last_publish_agents_local_plan_poses,
-        last_publish_agents_local_plan_fp_poses;
+    bool initialized_; //!< Config class that stores and manages all related parameters
+    rclcpp::TimerBase::SharedPtr clearing_timer_;
+
+    void clearingTimerCB();
+    bool last_publish_robot_global_plan_, last_publish_robot_local_plan_,
+        last_publish_robot_local_plan_poses_,
+        last_publish_robot_local_plan_fp_poses_, last_publish_agents_global_plans_,
+        last_publish_agents_local_plans_, last_publish_agents_local_plan_poses_,
+        last_publish_agents_local_plan_fp_poses_;
 
     mutable int last_robot_fp_poses_idx_, last_agent_fp_poses_idx_;
+
+    // ! config params
+    bool publish_robot_global_plan_ = true;
+    bool publish_robot_local_plan_ = true;
+    bool publish_robot_local_plan_poses_ = true;
+    bool publish_robot_local_plan_fp_poses_ = true;
+    bool publish_agents_global_plans_ = true;
+    bool publish_agents_local_plans_ = true;
+    bool publish_agents_local_plan_fp_poses_ = true;
+    bool publish_agents_local_plan_poses_ = true;
+    double pose_array_z_scale_ = 1.0;
+    double nominal_vel_x_ = 0.4;
+    double visualize_with_time_as_z_axis_scale_ = 0.5;
+
+    double max_vel_x_ = 0.0;
+
+    std::string map_frame_ = "map";
 
   public:
     EIGEN_MAKE_ALIGNED_OPERATOR_NEW
@@ -343,6 +375,6 @@ namespace hateb_local_planner
 } // namespace hateb_local_planner
 
 // Include template method implementations / definitions
-#include <hateb_local_planner/visualization.hpp>
+#include <visualization.hpp>
 
 #endif /* VISUALIZATION_H_ */
