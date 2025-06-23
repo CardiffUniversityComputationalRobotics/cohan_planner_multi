@@ -43,33 +43,34 @@
 // boost
 #include <boost/shared_ptr.hpp>
 
-// ros
+// ros2
 #include <tf2_ros/transform_listener.h>
 #include <tf2_ros/buffer.h>
 #include <tf2_ros/message_filter.h>
 #include <tf2_geometry_msgs/tf2_geometry_msgs.hpp>
-#include <base_local_planner/costmap_model.h>
+
+#include <nav2_costmap_2d/costmap_2d.hpp>
+#include <nav2_costmap_2d/footprint_collision_checker.hpp>
 
 // this package
 #include <pose_se2.h>
+#include <geometry_msgs/msg/pose_array.hpp>
+#include <geometry_msgs/msg/pose_stamped.hpp>
+#include <geometry_msgs/msg/twist_stamped.hpp>
 
-// messages
-#include <geometry_msgs/PoseArray.h>
-#include <geometry_msgs/PoseStamped.h>
-#include <geometry_msgs/TwistStamped.h>
-#include <cohan_msgs/AgentPath.h>
-#include <hateb_local_planner/OptimizationCostArray.h>
-
-#include <hateb_local_planner/TrajectoryMsg.h>
+#include <cohan_msgs/msg/agent_path.hpp>
+#include <cohan_msgs/msg/optimization_cost_array.hpp>
+#include <cohan_msgs/msg/trajectory_point.hpp>
+#include <cohan_msgs/msg/trajectory_point_msg.hpp>
 
 namespace hateb_local_planner
 {
 
   typedef struct
   {
-    std::vector<geometry_msgs::PoseStamped> plan;
-    geometry_msgs::Twist start_vel;
-    geometry_msgs::Twist goal_vel;
+    std::vector<geometry_msgs::msg::PoseStamped> plan;
+    geometry_msgs::msg::Twist start_vel;
+    geometry_msgs::msg::Twist goal_vel;
     double nominal_vel;
     int isMode;
   } PlanStartVelGoalVel;
@@ -104,26 +105,26 @@ namespace hateb_local_planner
      *
      * Provide this method to create and optimize a trajectory that is initialized
      * according to an initial reference plan (given as a container of poses).
-     * @param initial_plan vector of geometry_msgs::PoseStamped
+     * @param initial_plan vector of geometry_msgs::msg::PoseStamped
      * @param start_vel Current start velocity (e.g. the velocity of the robot, only linear.x and angular.z are used)
      * @param free_goal_vel if \c true, a nonzero final velocity at the goal pose is allowed,
      *        otherwise the final velocity will be zero (default: false)
      * @return \c true if planning was successful, \c false otherwise
      */
-    virtual bool plan(const std::vector<geometry_msgs::PoseStamped> &initial_plan, const geometry_msgs::Twist *start_vel = NULL, bool free_goal_vel = false, const AgentPlanVelMap *initial_agent_plan_vels = NULL, hateb_local_planner::OptimizationCostArray *op_costs = NULL, double dt_ref = 0.4, double dt_hyst = 0.1, int Mode = 0) = 0;
+    virtual bool plan(const std::vector<geometry_msgs::msg::PoseStamped> &initial_plan, const geometry_msgs::msg::Twist *start_vel = NULL, bool free_goal_vel = false, const AgentPlanVelMap *initial_agent_plan_vels = NULL, cohan_msgs::msg::OptimizationCostArray *op_costs = NULL, double dt_ref = 0.4, double dt_hyst = 0.1, int Mode = 0) = 0;
 
     /**
-     * @brief Plan a trajectory between a given start and goal pose (tf::Pose version).
+     * @brief Plan a trajectory between a given start and goal pose (geometry_msgs::msg::Pose version).
      *
      * Provide this method to create and optimize a trajectory that is initialized between a given start and goal pose.
-     * @param start tf::Pose containing the start pose of the trajectory
-     * @param goal tf::Pose containing the goal pose of the trajectory
+     * @param start geometry_msgs::msg::Pose containing the start pose of the trajectory
+     * @param goal geometry_msgs::msg::Pose containing the goal pose of the trajectory
      * @param start_vel Current start velocity (e.g. the velocity of the robot, only linear.x and angular.z are used)
      * @param free_goal_vel if \c true, a nonzero final velocity at the goal pose is allowed,
      *        otherwise the final velocity will be zero (default: false)
      * @return \c true if planning was successful, \c false otherwise
      */
-    virtual bool plan(const tf::Pose &start, const tf::Pose &goal, const geometry_msgs::Twist *start_vel = NULL, bool free_goal_vel = false, hateb_local_planner::OptimizationCostArray *op_costs = NULL, double dt_ref = 0.4, double dt_hyst = 0.1, int Mode = 0) = 0;
+    virtual bool plan(const geometry_msgs::msg::Pose &start, const geometry_msgs::msg::Pose &goal, const geometry_msgs::msg::Twist *start_vel = NULL, bool free_goal_vel = false, cohan_msgs::msg::OptimizationCostArray *op_costs = NULL, double dt_ref = 0.4, double dt_hyst = 0.1, int Mode = 0) = 0;
 
     /**
      * @brief Plan a trajectory between a given start and goal pose.
@@ -136,7 +137,7 @@ namespace hateb_local_planner
      *        otherwise the final velocity will be zero (default: false)
      * @return \c true if planning was successful, \c false otherwise
      */
-    virtual bool plan(const PoseSE2 &start, const PoseSE2 &goal, const geometry_msgs::Twist *start_vel = NULL, bool free_goal_vel = false, double pre_plan_time = 0.0, hateb_local_planner::OptimizationCostArray *op_costs = NULL, double dt_ref = 0.4, double dt_hyst = 0.1, int Mode = 0) = 0;
+    virtual bool plan(const PoseSE2 &start, const PoseSE2 &goal, const geometry_msgs::msg::Twist *start_vel = NULL, bool free_goal_vel = false, double pre_plan_time = 0.0, cohan_msgs::msg::OptimizationCostArray *op_costs = NULL, double dt_ref = 0.4, double dt_hyst = 0.1, int Mode = 0) = 0;
 
     /**
      * @brief Get the velocity command from a previously optimized plan to control the robot at the current sampling interval.
@@ -164,7 +165,7 @@ namespace hateb_local_planner
      * Initial means that the penalty is applied only to the first few poses of the trajectory.
      * @param dir This parameter might be RotType::left (prefer left), RotType::right (prefer right) or RotType::none (prefer none)
      */
-    virtual void setPreferredTurningDir(RotType dir) { ROS_WARN("setPreferredTurningDir() not implemented for this planner."); }
+    virtual void setPreferredTurningDir(RotType dir) { RCLCPP_WARN(rclcpp::get_logger("planner_interface_hateb"), "setPreferredTurningDir() not implemented."); }
 
     /**
      * @brief Visualize planner specific stuff.
@@ -187,7 +188,7 @@ namespace hateb_local_planner
      * @return \c true, if the robot footprint along the first part of the trajectory intersects with
      *         any obstacle in the costmap, \c false otherwise.
      */
-    virtual bool isTrajectoryFeasible(base_local_planner::CostmapModel *costmap_model, const std::vector<geometry_msgs::Point> &footprint_spec,
+    virtual bool isTrajectoryFeasible(nav2_costmap_2d::Costmap2D *costmap_model, const std::vector<geometry_msgs::msg::Point> &footprint_spec,
                                       double inscribed_radius = 0.0, double circumscribed_radius = 0.0, int look_ahead_idx = -1) = 0;
 
     /**
@@ -200,8 +201,8 @@ namespace hateb_local_planner
     virtual void computeCurrentCost(std::vector<double> &cost, double obst_cost_scale = 1.0, bool alternative_time_cost = false)
     {
     }
-    virtual void getFullTrajectory(std::vector<TrajectoryPointMsg> &trajectory) const = 0;
-    virtual void getFullAgentTrajectory(const uint64_t agent_id, std::vector<TrajectoryPointMsg> &agent_trajectory) = 0;
+    virtual void getFullTrajectory(std::vector<cohan_msgs::msg::TrajectoryPointMsg> &trajectory) const = 0;
+    virtual void getFullAgentTrajectory(const uint64_t agent_id, std::vector<cohan_msgs::msg::TrajectoryPointMsg> &agent_trajectory) = 0;
 
     double local_weight_optimaltime_;
   };

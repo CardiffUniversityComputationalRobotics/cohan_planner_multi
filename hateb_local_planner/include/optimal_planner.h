@@ -41,9 +41,12 @@
 #define OPTIMAL_PLANNER_H_
 
 #include <math.h>
+#include <mutex>
+#include <cassert>
+
+#include <boost/make_shared.hpp>
 
 // teb stuff
-#include <hateb_config.h>
 #include <misc.h>
 #include <timed_elastic_band.h>
 #include <planner_interface.h>
@@ -60,33 +63,37 @@
 #include <g2o/solvers/cholmod/linear_solver_cholmod.h>
 
 // g2o custom edges and vertices for the HATEB planner
-#include <hateb_local_planner/g2o_types/edge_velocity.h>
-#include <hateb_local_planner/g2o_types/edge_acceleration.h>
-#include <hateb_local_planner/g2o_types/edge_dynamic_obstacle.h>
-#include <hateb_local_planner/g2o_types/edge_agent_agent_safety.h>
-#include <hateb_local_planner/g2o_types/edge_agent_robot_rel_velocity.h>
-#include <hateb_local_planner/g2o_types/edge_agent_robot_safety.h>
-#include <hateb_local_planner/g2o_types/edge_agent_robot_ttc.h>
-#include <hateb_local_planner/g2o_types/edge_agent_robot_ttcplus.h>
-#include <hateb_local_planner/g2o_types/edge_agent_robot_visibility.h>
-#include <hateb_local_planner/g2o_types/edge_invisible_human.h>
-#include <hateb_local_planner/g2o_types/edge_invisible_human_velocity.h>
-#include <hateb_local_planner/g2o_types/edge_kinematics.h>
-#include <hateb_local_planner/g2o_types/edge_time_optimal.h>
-#include <hateb_local_planner/g2o_types/edge_shortest_path.h>
-#include <hateb_local_planner/g2o_types/edge_obstacle.h>
-#include <hateb_local_planner/g2o_types/edge_dynamic_obstacle.h>
-#include <hateb_local_planner/g2o_types/edge_via_point.h>
-#include <hateb_local_planner/g2o_types/edge_prefer_rotdir.h>
-#include <hateb_local_planner/g2o_types/edge_static_agent_visibility.h>
+#include <g2o_types/edge_velocity.h>
+#include <g2o_types/edge_acceleration.h>
+#include <g2o_types/edge_dynamic_obstacle.h>
+#include <g2o_types/edge_agent_agent_safety.h>
+#include <g2o_types/edge_agent_robot_rel_velocity.h>
+#include <g2o_types/edge_agent_robot_safety.h>
+#include <g2o_types/edge_agent_robot_ttc.h>
+#include <g2o_types/edge_agent_robot_ttcplus.h>
+#include <g2o_types/edge_agent_robot_visibility.h>
+#include <g2o_types/edge_invisible_human.h>
+#include <g2o_types/edge_invisible_human_velocity.h>
+#include <g2o_types/edge_kinematics.h>
+#include <g2o_types/edge_time_optimal.h>
+#include <g2o_types/edge_shortest_path.h>
+#include <g2o_types/edge_obstacle.h>
+#include <g2o_types/edge_dynamic_obstacle.h>
+#include <g2o_types/edge_via_point.h>
+#include <g2o_types/edge_prefer_rotdir.h>
+#include <g2o_types/edge_static_agent_visibility.h>
 
 // messages
-#include <nav_msgs/Path.h>
-#include <geometry_msgs/PoseStamped.h>
-#include <tf/transform_datatypes.h>
-#include <hateb_local_planner/TrajectoryMsg.h>
+#include <nav_msgs/msg/path.h>
+#include <geometry_msgs/msg/pose_stamped.h>
+#include <tf2_ros/transform_listener.h>
+#include <tf2_ros/buffer.h>
+#include <tf2_ros/message_filter.h>
+#include <tf2_geometry_msgs/tf2_geometry_msgs.hpp>
+#include <cohan_msgs/msg/trajectory_msg.hpp>
+#include <cohan_msgs/msg/optimization_cost.hpp>
 
-#include <nav_msgs/Odometry.h>
+#include <nav_msgs/msg/odometry.h>
 #include <limits.h>
 
 namespace hateb_local_planner
@@ -127,13 +134,12 @@ namespace hateb_local_planner
 
     /**
      * @brief Construct and initialize the TEB optimal planner.
-     * @param cfg Const reference to the HATebConfig class for internal parameters
      * @param obstacles Container storing all relevant obstacles (see Obstacle)
      * @param robot_model Shared pointer to the robot shape model used for optimization (optional)
      * @param visual Shared pointer to the TebVisualization class (optional)
      * @param via_points Container storing via-points (optional)
      */
-    TebOptimalPlanner(const HATebConfig &cfg, ObstContainer *obstacles = NULL,
+    TebOptimalPlanner(ObstContainer *obstacles = NULL,
                       RobotFootprintModelPtr robot_model = boost::make_shared<PointRobotFootprint>(),
                       TebVisualizationPtr visual = TebVisualizationPtr(),
                       const ViaPointContainer *via_points = NULL,
@@ -147,13 +153,12 @@ namespace hateb_local_planner
 
     /**
      * @brief Initializes the optimal planner
-     * @param cfg Const reference to the HATebConfig class for internal parameters
      * @param obstacles Container storing all relevant obstacles (see Obstacle)
      * @param robot_model Shared pointer to the robot shape model used for optimization (optional)
      * @param visual Shared pointer to the TebVisualization class (optional)
      * @param via_points Container storing via-points (optional)
      */
-    void initialize(const HATebConfig &cfg, ObstContainer *obstacles = NULL,
+    void initialize(ObstContainer *obstacles = NULL,
                     RobotFootprintModelPtr robot_model = boost::make_shared<PointRobotFootprint>(),
                     TebVisualizationPtr visual = TebVisualizationPtr(),
                     const ViaPointContainer *via_points = NULL,
@@ -174,21 +179,21 @@ namespace hateb_local_planner
      * 	- If a previous solution is avaiable, update the trajectory based on the initial plan,
      * 	  see bool TimedElasticBand::updateAndPruneTEB
      * 	- Afterwards optimize the recently initialized or updated trajectory by calling optimizeTEB() and invoking g2o
-     * @param initial_plan vector of geometry_msgs::PoseStamped
+     * @param initial_plan vector of geometry_msgs::msg::PoseStamped
      * @param start_vel Current start velocity (e.g. the velocity of the robot, only linear.x, linear.y (holonomic) and angular.z are used)
      * @param free_goal_vel if \c true, a nonzero final velocity at the goal pose is allowed,
      *		      otherwise the final velocity will be zero (default: false)
      * @return \c true if planning was successful, \c false otherwise
      */
-    virtual bool plan(const std::vector<geometry_msgs::PoseStamped> &initial_plan,
-                      const geometry_msgs::Twist *start_vel = NULL,
+    virtual bool plan(const std::vector<geometry_msgs::msg::PoseStamped> &initial_plan,
+                      const geometry_msgs::msg::Twist *start_vel = NULL,
                       bool free_goal_vel = false,
                       const AgentPlanVelMap *initial_agent_plan_vels = NULL,
-                      hateb_local_planner::OptimizationCostArray *op_costs = NULL,
+                      cohan_msgs::msg::OptimizationCostArray *op_costs = NULL,
                       double dt_ref = 0.4, double dt_hyst = 0.1, int Mode = 0);
 
     /**
-     * @brief Plan a trajectory between a given start and goal pose (tf::Pose version)
+     * @brief Plan a trajectory between a given start and goal pose (geometry_msgs::msg::Pose version)
      *
      * Call this method to create and optimize a trajectory that is initialized between a given start and goal pose. \n
      * The method supports hot-starting from previous solutions, if avaiable: \n
@@ -196,14 +201,14 @@ namespace hateb_local_planner
      *	  see TimedElasticBand::initTEBtoGoal
      * 	- If a previous solution is avaiable, update the trajectory @see bool TimedElasticBand::updateAndPruneTEB
      * 	- Afterwards optimize the recently initialized or updated trajectory by calling optimizeTEB() and invoking g2o
-     * @param start tf::Pose containing the start pose of the trajectory
-     * @param goal tf::Pose containing the goal pose of the trajectory
+     * @param start geometry_msgs::msg::Pose containing the start pose of the trajectory
+     * @param goal geometry_msgs::msg::Pose containing the goal pose of the trajectory
      * @param start_vel Current start velocity (e.g. the velocity of the robot, only linear.x, linear.y (holonomic) and angular.z are used)
      * @param free_goal_vel if \c true, a nonzero final velocity at the goal pose is allowed,
      *		      otherwise the final velocity will be zero (default: false)
      * @return \c true if planning was successful, \c false otherwise
      */
-    virtual bool plan(const tf::Pose &start, const tf::Pose &goal, const geometry_msgs::Twist *start_vel = NULL, bool free_goal_vel = false, hateb_local_planner::OptimizationCostArray *op_costs = NULL, double dt_ref = 0.4, double dt_hyst = 0.1, int Mode = 0);
+    virtual bool plan(const geometry_msgs::msg::Pose &start, const geometry_msgs::msg::Pose &goal, const geometry_msgs::msg::Twist *start_vel = NULL, bool free_goal_vel = false, cohan_msgs::msg::OptimizationCostArray *op_costs = NULL, double dt_ref = 0.4, double dt_hyst = 0.1, int Mode = 0);
 
     /**
      * @brief Plan a trajectory between a given start and goal pose
@@ -221,7 +226,7 @@ namespace hateb_local_planner
      *		      otherwise the final velocity will be zero (default: false)
      * @return \c true if planning was successful, \c false otherwise
      */
-    virtual bool plan(const PoseSE2 &start, const PoseSE2 &goal, const geometry_msgs::Twist *start_vel = NULL, bool free_goal_vel = false, double pre_plan_time = 0.0, hateb_local_planner::OptimizationCostArray *op_costs = NULL, double dt_ref = 0.4, double dt_hyst = 0.1, int Mode = 0);
+    virtual bool plan(const PoseSE2 &start, const PoseSE2 &goal, const geometry_msgs::msg::Twist *start_vel = NULL, bool free_goal_vel = false, double pre_plan_time = 0.0, cohan_msgs::msg::OptimizationCostArray *op_costs = NULL, double dt_ref = 0.4, double dt_hyst = 0.1, int Mode = 0);
 
     /**
      * @brief Get the velocity command from a previously optimized plan to control the robot at the current sampling interval.
@@ -266,7 +271,7 @@ namespace hateb_local_planner
                      double obst_cost_scale = 1.0,
                      double viapoint_cost_scale = 1.0,
                      bool alternative_time_cost = false,
-                     hateb_local_planner::OptimizationCostArray *op_costs = NULL,
+                     cohan_msgs::msg::OptimizationCostArray *op_costs = NULL,
                      double dt_ref = 0.4,
                      double dt_hyst = 0.1);
 
@@ -276,7 +281,7 @@ namespace hateb_local_planner
                      double obst_cost_scale = 1.0,
                      double viapoint_cost_scale = 1.0,
                      bool alternative_time_cost = false,
-                     hateb_local_planner::OptimizationCostArray *op_costs = NULL);
+                     cohan_msgs::msg::OptimizationCostArray *op_costs = NULL);
 
     //@}
 
@@ -289,14 +294,14 @@ namespace hateb_local_planner
      * @param vel_start Current start velocity (e.g. the velocity of the robot, only linear.x and angular.z are used,
      *                  for holonomic robots also linear.y)
      */
-    void setVelocityStart(const geometry_msgs::Twist &vel_start);
+    void setVelocityStart(const geometry_msgs::msg::Twist &vel_start);
 
     /**
      * @brief Set the desired final velocity at the trajectory's goal pose.
      * @remarks Call this function only if a non-zero velocity is desired and if \c free_goal_vel is set to \c false in plan()
      * @param vel_goal twist message containing the translational and angular final velocity
      */
-    void setVelocityGoal(const geometry_msgs::Twist &vel_goal);
+    void setVelocityGoal(const geometry_msgs::msg::Twist &vel_goal);
 
     /**
      * @brief Set the desired final velocity at the trajectory's goal pose to be the maximum velocity limit
@@ -449,7 +454,7 @@ namespace hateb_local_planner
     void computeCurrentCost(double obst_cost_scale = 1.0,
                             double viapoint_cost_scale = 1.0,
                             bool alternative_time_cost = false,
-                            hateb_local_planner::OptimizationCostArray *op_costs = NULL);
+                            cohan_msgs::msg::OptimizationCostArray *op_costs = NULL);
 
     /**
      * Compute and return the cost of the current optimization graph (supports multiple trajectories)
@@ -506,7 +511,7 @@ namespace hateb_local_planner
      * to the next step refer to getVelocityCommand().
      * @param[out] velocity_profile velocity profile will be written to this vector (after clearing any existing content) with the size=no_poses+1
      */
-    void getVelocityProfile(std::vector<geometry_msgs::Twist> &velocity_profile) const;
+    void getVelocityProfile(std::vector<geometry_msgs::msg::Twist> &velocity_profile) const;
 
     /**
      * @brief Return the complete trajectory including poses, velocity profiles and temporal information
@@ -519,8 +524,8 @@ namespace hateb_local_planner
      * @todo The acceleration profile is not added at the moment.
      * @param[out] trajectory the resulting trajectory
      */
-    void getFullTrajectory(std::vector<TrajectoryPointMsg> &trajectory) const;
-    void getFullAgentTrajectory(const uint64_t agent_id, std::vector<TrajectoryPointMsg> &agent_trajectory);
+    void getFullTrajectory(std::vector<cohan_msgs::msg::TrajectoryPointMsg> &trajectory) const;
+    void getFullAgentTrajectory(const uint64_t agent_id, std::vector<cohan_msgs::msg::TrajectoryPointMsg> &agent_trajectory);
 
     /**
      * @brief Check whether the planned trajectory is feasible or not.
@@ -535,7 +540,7 @@ namespace hateb_local_planner
      * @return \c true, if the robot footprint along the first part of the trajectory intersects with
      *         any obstacle in the costmap, \c false otherwise.
      */
-    virtual bool isTrajectoryFeasible(base_local_planner::CostmapModel *costmap_model, const std::vector<geometry_msgs::Point> &footprint_spec, double inscribed_radius = 0.0,
+    virtual bool isTrajectoryFeasible(nav2_costmap_2d::Costmap2D *costmap_model, const std::vector<geometry_msgs::msg::Point> &footprint_spec, double inscribed_radius = 0.0,
                                       double circumscribed_radius = 0.0, int look_ahead_idx = -1);
 
     //@}
@@ -719,8 +724,8 @@ namespace hateb_local_planner
     boost::shared_ptr<g2o::SparseOptimizer> initOptimizer();
 
     // external objects (store weak pointers)
-    const HATebConfig
-        *cfg_;                            //!< Config class that stores and manages all related parameters
+    // const HATebConfig
+    //     *cfg_;                            //!< Config class that stores and manages all related parameters
     ObstContainer *obstacles_;            //!< Store obstacles that are relevant for planning
     const ViaPointContainer *via_points_; //!< Store via points for planning
     const std::map<uint64_t, ViaPointContainer> *agents_via_points_map_;
@@ -732,17 +737,17 @@ namespace hateb_local_planner
     TebVisualizationPtr visualization_; //!< Instance of the visualization class
     TimedElasticBand teb_;              //!< Actual trajectory object
     std::map<uint64_t, TimedElasticBand> agents_tebs_map_;
-    geometry_msgs::PoseStamped approach_pose_;
+    geometry_msgs::msg::PoseStamped approach_pose_;
     VertexPose *approach_pose_vertex;
     // double dt_ref_def, dt_hyst_def;
 
     RobotFootprintModelPtr robot_model_; //!< Robot model
     CircularRobotFootprintPtr agent_model_;
-    boost::shared_ptr<g2o::SparseOptimizer> optimizer_; //!< g2o optimizer for trajectory optimization
-    std::pair<bool, geometry_msgs::Twist> vel_start_;   //!< Store the initial velocity at the start pose
-    std::pair<bool, geometry_msgs::Twist> vel_goal_;    //!< Store the final velocity at the goal pose
-    std::map<uint64_t, std::pair<bool, geometry_msgs::Twist>> agents_vel_start_, agents_vel_goal_;
-    std::vector<geometry_msgs::Pose> static_agents;
+    boost::shared_ptr<g2o::SparseOptimizer> optimizer_;    //!< g2o optimizer for trajectory optimization
+    std::pair<bool, geometry_msgs::msg::Twist> vel_start_; //!< Store the initial velocity at the start pose
+    std::pair<bool, geometry_msgs::msg::Twist> vel_goal_;  //!< Store the final velocity at the goal pose
+    std::map<uint64_t, std::pair<bool, geometry_msgs::msg::Twist>> agents_vel_start_, agents_vel_goal_;
+    std::vector<geometry_msgs::msg::Pose> static_agents;
 
     bool initialized_; //!< Keeps track about the correct initialization of this class
     bool optimized_;   //!< This variable is \c true as long as the last optimization has been completed successful
@@ -750,6 +755,113 @@ namespace hateb_local_planner
     int isMode;                             // Planning Mode
     std::vector<double> agent_nominal_vels; // Nominal agent velocities calculated using moving average filter
     double current_agent_robot_min_dist;    // Controls addition of edges
+
+    // ! config params
+    bool publish_feedback_ = true;
+    bool optimization_activate_ = true;
+    double dt_ref_ = 0.1;
+    double dt_hysteresis_ = 0.1;
+    bool include_dynamic_obstacles_ = true;
+    int min_samples_ = 3;
+    bool teb_autosize_ = true;
+    double weight_adapt_factor_ = 2;
+    double teb_init_skip_dist_ = 0.4;
+    bool disable_warm_start_ = false;
+    double force_reinit_new_goal_dist_ = 1.0;
+    double force_reinit_new_goal_angular_ = 0.78;
+    int planning_mode_ = 1;
+    int agent_min_samples_ = 3;
+    int no_inner_iterations_ = 5;
+    int no_outer_iterations_ = 4;
+    bool legacy_obstacle_association_ = false;
+    double min_turning_radius_ = 0.1;
+    double weight_kinematics_turning_radius_ = 1;
+    bool use_agent_robot_safety_c_ = true;
+    bool use_agent_robot_ttc_c_ = true;
+    bool use_agent_robot_ttcplus_c_ = true;
+    bool use_agent_robot_rel_vel_c_ = true;
+    bool use_agent_agent_safety_c_ = true;
+    bool use_agent_robot_visi_c_ = true;
+    bool optimization_verbose_ = true;
+    double weight_obstacle_ = 50;
+
+    double inflation_dist_ = 0.6;
+    double min_obstacle_dist_ = 0.5;
+    double weight_inflation_ = 0.1;
+
+    double obstacle_association_force_inclusion_factor_ = 0.5;
+    double obstacle_association_cutoff_factor_ = 5;
+    int obstacle_poses_affected_ = 30;
+
+    double weight_dynamic_obstacle_ = 50;
+    double weight_dynamic_obstacle_inflation_ = 0.1;
+    double weight_invisible_human_ = 20;
+
+    double weight_viapoint_ = 1;
+    bool via_points_ordered_ = false;
+    double weight_agent_viapoint_ = 1;
+
+    double max_vel_x_ = 0.4;
+    double max_vel_y_ = 0.0;
+
+    bool add_invisible_humans_ = false;
+
+    // ! PARAMS TO CHECK
+    // Velocity weights
+    double weight_max_vel_x_ = 2.0;
+    double weight_max_vel_y_ = 2.0;
+    double weight_max_vel_theta_ = 1.0;
+
+    // Agent velocity weights
+    double weight_max_agent_vel_x_ = 0.0;
+    double weight_max_agent_vel_y_ = 0.0;
+    double weight_max_agent_vel_theta_ = 0.0;
+    double weight_nominal_agent_vel_x_ = 0.0;
+
+    // Acceleration weights
+    double weight_acc_lim_x_ = 1.0;
+    double weight_acc_lim_y_ = 1.0;
+    double weight_acc_lim_theta_ = 1.0;
+
+    // Agent acceleration weights
+    double weight_agent_acc_lim_x_ = 0.0;
+    double weight_agent_acc_lim_theta_ = 0.0;
+
+    // Limits
+    double acc_lim_y_ = 1.0;
+
+    // Time optimal weights
+    double weight_optimaltime_ = 1.0;
+    double weight_agent_optimaltime_ = 1.0;
+
+    // Path optimization
+    double weight_shortest_path_ = 0.0;
+
+    // Kinematic constraints
+    double weight_kinematics_nh_ = 1000.0;
+    double weight_kinematics_forward_drive_ = 1.0;
+
+    // For rotation preference
+    double weight_prefer_rotdir_ = 50.0;
+
+    // For agent-robot safety
+    double min_agent_robot_dist_ = 0.6; // set a default, tune as needed
+    double weight_agent_robot_safety_ = 20.0;
+
+    // For agent-agent safety
+    double weight_agent_agent_safety_ = 20.0;
+
+    // For Time-to-Collision (TTC)
+    double weight_agent_robot_ttc_ = 20.0;
+    double weight_agent_robot_ttcplus_ = 20.0;
+
+    // For relative velocity
+    double weight_agent_robot_rel_vel_ = 20.0;
+
+    // For visibility
+    double weight_agent_robot_visibility_ = 20.0;
+
+    double min_resolution_collision_check_angular_ = 3.141516;
 
   public:
     EIGEN_MAKE_ALIGNED_OPERATOR_NEW

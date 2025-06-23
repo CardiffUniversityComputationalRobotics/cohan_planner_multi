@@ -40,21 +40,24 @@
 #ifndef TIMED_ELASTIC_BAND_H_
 #define TIMED_ELASTIC_BAND_H_
 
-#include <ros/ros.h>
-#include <ros/assert.h>
+#include <cassert>
+#include <boost/optional.hpp>
+// #include <boost/prior.hpp>
+#include <iterator> // for std::prev
 
-#include <geometry_msgs/PoseStamped.h>
-#include <geometry_msgs/PoseArray.h>
-#include <tf/tf.h>
+#include <rclcpp/rclcpp.hpp>
+
+#include <geometry_msgs/msg/pose_stamped.h>
+#include <geometry_msgs/msg/pose_array.h>
 
 #include <complex>
 #include <iterator>
 
-#include <hateb_local_planner/obstacles.h>
+#include <obstacles.h>
 
 // G2O Types
-#include <hateb_local_planner/g2o_types/vertex_pose.h>
-#include <hateb_local_planner/g2o_types/vertex_timediff.h>
+#include <g2o_types/vertex_pose.h>
+#include <g2o_types/vertex_timediff.h>
 
 namespace hateb_local_planner
 {
@@ -129,7 +132,7 @@ namespace hateb_local_planner
      */
     double &TimeDiff(unsigned int index)
     {
-      ROS_ASSERT(index < sizeTimeDiffs());
+      assert(index < sizeTimeDiffs());
       return timediff_vec_.at(index)->dt();
     }
 
@@ -140,7 +143,7 @@ namespace hateb_local_planner
      */
     const double &TimeDiff(unsigned int index) const
     {
-      ROS_ASSERT(index < sizeTimeDiffs());
+      assert(index < sizeTimeDiffs());
       return timediff_vec_.at(index)->dt();
     }
 
@@ -151,7 +154,7 @@ namespace hateb_local_planner
      */
     PoseSE2 &Pose(unsigned int index)
     {
-      ROS_ASSERT(index < sizePoses());
+      assert(index < sizePoses());
       return pose_vec_.at(index)->pose();
     }
 
@@ -162,7 +165,7 @@ namespace hateb_local_planner
      */
     const PoseSE2 &Pose(unsigned int index) const
     {
-      ROS_ASSERT(index < sizePoses());
+      assert(index < sizePoses());
       return pose_vec_.at(index)->pose();
     }
 
@@ -193,7 +196,7 @@ namespace hateb_local_planner
      */
     VertexPose *PoseVertex(unsigned int index)
     {
-      ROS_ASSERT(index < sizePoses());
+      assert(index < sizePoses());
       return pose_vec_.at(index);
     }
 
@@ -204,7 +207,7 @@ namespace hateb_local_planner
      */
     VertexTimeDiff *TimeDiffVertex(unsigned int index)
     {
-      ROS_ASSERT(index < sizeTimeDiffs());
+      assert(index < sizeTimeDiffs());
       return timediff_vec_.at(index);
     }
 
@@ -404,14 +407,14 @@ namespace hateb_local_planner
      * (e.g. as local plan from the ros navigation stack). \n
      * The initial time difference between two consecutive poses can be uniformly set
      * via the argument \c dt.
-     * @param plan vector of geometry_msgs::PoseStamped
+     * @param plan vector of geometry_msgs::msg::PoseStamped
      * @param dt specify a uniform time difference between two consecutive poses
      * @param estimate_orient if \c true, calculate orientation using the straight line distance vector between consecutive poses
      *                        (only copy start and goal orientation; recommended if no orientation data is available).
      * @param min_samples Minimum number of samples that should be initialized at least
      * @return true if everything was fine, false otherwise
      */
-    bool initTEBtoGoal(const std::vector<geometry_msgs::PoseStamped> &plan, double dt, bool estimate_orient = false, int min_samples = 3, double skip_dist = 0.0);
+    bool initTEBtoGoal(const std::vector<geometry_msgs::msg::PoseStamped> &plan, double dt, bool estimate_orient = false, int min_samples = 3, double skip_dist = 0.0);
 
     //@}
 
@@ -604,6 +607,6 @@ namespace hateb_local_planner
 } // namespace hateb_local_planner
 
 // include template implementations / definitions
-#include <hateb_local_planner/timed_elastic_band.hpp>
+#include <timed_elastic_band.hpp>
 
 #endif /* TIMED_ELASTIC_BAND_H_ */

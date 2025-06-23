@@ -163,7 +163,7 @@ namespace hateb_local_planner
      */
     void publishLocalPlan(const std::vector<geometry_msgs::msg::PoseStamped> &local_plan) const;
 
-    void publishTrackedAgents(const cohan_msgs::msg::TrackedAgents::SharedPtr &agents);
+    void publishTrackedAgents(const cohan_msgs::msg::TrackedAgents::SharedPtr agents);
 
     /**
      * @brief Publish Timed_Elastic_Band related stuff (local plan, pose sequence).
