@@ -27,7 +27,7 @@ find_package(interactive_markers REQUIRED)
 find_package(Eigen3 REQUIRED)
 find_package(Boost REQUIRED COMPONENTS system thread)
 # find_package(G2O REQUIRED)
-# find_package(SUITESPARSE REQUIRED)
+# find_package(SuiteSparse REQUIRED)
 
 # Custom dependencies
 find_package(cohan_msgs REQUIRED)
@@ -54,7 +54,7 @@ include_directories(
   include
   ${EIGEN3_INCLUDE_DIRS}
   ${G2O_INCLUDE_DIR}
-  # ${SUITESPARSE_INCLUDE_DIRS}
+  /usr/include/suitesparse
   SYSTEM
 )
 
@@ -82,19 +82,29 @@ set(EXTERNAL_LIBS ${G2O_LIBRARIES} ${Boost_LIBRARIES})
 
 add_executable(hateb_local_planner_node
   # src/hateb_local_planner_ros.cpp
-  # src/timed_elastic_band.cpp
-  # src/optimal_planner.cpp
-  # src/obstacles.cpp
-  # src/visualization.cpp
+  src/timed_elastic_band.cpp
+  src/optimal_planner.cpp
+  src/obstacles.cpp
+  src/visualization.cpp
   # src/recovery_behaviors.cpp
   # src/hateb_config.cpp
   # src/homotopy_class_planner.cpp
-  src/graph_search.cpp
+  # src/graph_search.cpp
   # src/backoff.cpp
 )
 
 ament_target_dependencies(hateb_local_planner_node ${dependencies})
-target_link_libraries(hateb_local_planner_node ${EXTERNAL_LIBS})
+target_link_libraries(hateb_local_planner_node
+     ${EXTERNAL_LIBS}
+    #  -lcsparse
+    cholmod
+    blas
+    lapack
+    amd
+    colamd
+    camd
+    ccolamd
+     )
 
 # Install targets
 install(TARGETS
