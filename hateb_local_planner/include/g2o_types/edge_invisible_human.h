@@ -36,13 +36,15 @@
 #ifndef EDGE_INVISIBLEHUMAN_H
 #define EDGE_INVISIBLEHUMAN_H
 
-#include <hateb_local_planner/g2o_types/vertex_pose.h>
-#include <hateb_local_planner/g2o_types/vertex_timediff.h>
-#include <hateb_local_planner/g2o_types/penalties.h>
-#include <hateb_local_planner/g2o_types/base_teb_edges.h>
-#include <hateb_local_planner/obstacles.h>
-#include <hateb_local_planner/hateb_config.h>
-#include <hateb_local_planner/robot_footprint_model.h>
+#include <cassert>
+
+#include <g2o_types/vertex_pose.h>
+#include <g2o_types/vertex_timediff.h>
+#include <g2o_types/penalties.h>
+#include <g2o_types/base_teb_edges.h>
+#include <obstacles.h>
+// #include <hateb_config.h>
+#include <robot_footprint_model.h>
 
 namespace hateb_local_planner
 {
@@ -68,7 +70,7 @@ namespace hateb_local_planner
      */
     void computeError()
     {
-      ROS_ASSERT_MSG(cfg_ && _measurement && robot_model_, "You must call setHATebConfig(), setObstacle() and setRobotModel() on EdgeInvisibleHuman()");
+      assert(_measurement && robot_model_);
       const VertexPose *bandpt = static_cast<const VertexPose *>(_vertices[0]);
       const VertexPose *bandpt_nxt = static_cast<const VertexPose *>(_vertices[1]);
       const VertexTimeDiff *dt_ = static_cast<const VertexTimeDiff *>(_vertices[2]);
@@ -80,9 +82,9 @@ namespace hateb_local_planner
       if (t_ > 0.5) // Accounting for human reaction time
         cost = (std::max(V_i - a_norm * t_, 0.0) + robot_vel.norm() + 1.0) / dist;
 
-      _error[0] = penaltyBoundFromAbove(cost, cfg_->hateb.invisible_human_threshold, cfg_->optim.penalty_epsilon);
+      _error[0] = penaltyBoundFromAbove(cost, invisible_human_threshold_, penalty_epsilon_);
 
-      ROS_ASSERT_MSG(std::isfinite(_error[0]), "EdgeInvisibleHuman::computeError() _error[0]=%f\n", _error[0]);
+      assert(std::isfinite(_error[0]));
     }
 
     /**
@@ -109,9 +111,8 @@ namespace hateb_local_planner
      * @param robot_model Robot model required for distance calculation
      * @param obstacle 2D position vector containing the position of the obstacle
      */
-    void setParameters(const HATebConfig &cfg, const BaseRobotFootprintModel *robot_model, const Obstacle *obstacle)
+    void setParameters(const BaseRobotFootprintModel *robot_model, const Obstacle *obstacle)
     {
-      cfg_ = &cfg;
       robot_model_ = robot_model;
       _measurement = obstacle;
     }
@@ -123,6 +124,10 @@ namespace hateb_local_planner
     double a_min = 0.1;
     double a_norm = 0.68;
     double a_max = 2.94; // 0.3g
+
+    // ! CONFIG PARAMS
+    double invisible_human_threshold_ = 20;
+    double penalty_epsilon_ = 0.5;
 
   public:
     EIGEN_MAKE_ALIGNED_OPERATOR_NEW

@@ -45,11 +45,13 @@
 #ifndef EDGE_VELOCITY_H
 #define EDGE_VELOCITY_H
 
-#include <hateb_local_planner/g2o_types/vertex_pose.h>
-#include <hateb_local_planner/g2o_types/vertex_timediff.h>
-#include <hateb_local_planner/g2o_types/base_teb_edges.h>
-#include <hateb_local_planner/g2o_types/penalties.h>
-#include <hateb_local_planner/hateb_config.h>
+#include <cassert>
+
+#include <g2o_types/vertex_pose.h>
+#include <g2o_types/vertex_timediff.h>
+#include <g2o_types/base_teb_edges.h>
+#include <g2o_types/penalties.h>
+// #include <hateb_config.h>
 
 #include <iostream>
 
@@ -87,13 +89,12 @@ namespace hateb_local_planner
      */
     void computeError()
     {
-      ROS_ASSERT_MSG(cfg_, "You must call setHATebConfig on EdgeVelocity()");
       const VertexPose *conf1 = static_cast<const VertexPose *>(_vertices[0]);
       const VertexPose *conf2 = static_cast<const VertexPose *>(_vertices[1]);
       const VertexTimeDiff *deltaT = static_cast<const VertexTimeDiff *>(_vertices[2]);
 
-      double vel_linear = cfg_->robot.max_vel_x;
-      double vel_theta = cfg_->robot.max_vel_theta;
+      double vel_linear = 0.4;
+      double vel_theta = 1.0;
 
       if (mode == 3)
       {
@@ -106,7 +107,8 @@ namespace hateb_local_planner
 
       double dist = deltaS.norm();
       const double angle_diff = g2o::normalize_theta(conf2->theta() - conf1->theta());
-      if (cfg_->trajectory.exact_arc_length && angle_diff != 0)
+
+      if (exact_arc_length_ && angle_diff != 0)
       {
         double radius = dist / (2 * sin(angle_diff / 2));
         dist = fabs(angle_diff * radius); // actual arg length!
@@ -118,15 +120,14 @@ namespace hateb_local_planner
 
       const double omega = angle_diff / deltaT->estimate();
 
-      _error[0] = penaltyBoundToInterval(vel, -cfg_->robot.max_vel_x_backwards, vel_linear, cfg_->optim.penalty_epsilon);
-      _error[1] = penaltyBoundToInterval(omega, vel_theta, cfg_->optim.penalty_epsilon);
+      _error[0] = penaltyBoundToInterval(vel, -max_vel_x_backwards_, vel_linear, penalty_epsilon_);
+      _error[1] = penaltyBoundToInterval(omega, vel_theta, penalty_epsilon_);
 
-      ROS_ASSERT_MSG(std::isfinite(_error[0]), "EdgeVelocity::computeError() _error[0]=%f _error[1]=%f\n", _error[0], _error[1]);
+      assert(std::isfinite(_error[0]));
     }
 
-    void setParameters(const HATebConfig &cfg, const BaseRobotFootprintModel *robot_model, const int isMode)
+    void setParameters(const BaseRobotFootprintModel *robot_model, const int isMode)
     {
-      cfg_ = &cfg;
       robot_model_ = robot_model;
       mode = isMode;
     }
@@ -135,80 +136,9 @@ namespace hateb_local_planner
     const BaseRobotFootprintModel *robot_model_;
     Obstacle *obs_ = new PointObstacle();
     int mode = 0;
-
-#ifdef USE_ANALYTIC_JACOBI
-#if 0 // TODO the hardcoded jacobian does not include the changing direction (just the absolute value)
-      //  Change accordingly...
-
-  /**
-   * @brief Jacobi matrix of the cost function specified in computeError().
-   */
-  void linearizeOplus()
-  {
-    ROS_ASSERT_MSG(cfg_, "You must call setHATebConfig on EdgeVelocity()");
-    const VertexPose* conf1 = static_cast<const VertexPose*>(_vertices[0]);
-    const VertexPose* conf2 = static_cast<const VertexPose*>(_vertices[1]);
-    const VertexTimeDiff* deltaT = static_cast<const VertexTimeDiff*>(_vertices[2]);
-
-    Eigen::Vector2d deltaS = conf2->position() - conf1->position();
-    double dist = deltaS.norm();
-    double aux1 = dist*deltaT->estimate();
-    double aux2 = 1/deltaT->estimate();
-
-    double vel = dist * aux2;
-    double omega = g2o::normalize_theta(conf2->theta() - conf1->theta()) * aux2;
-
-    double dev_border_vel = penaltyBoundToIntervalDerivative(vel, -cfg_->robot.max_vel_x_backwards, cfg_->robot.max_vel_x,cfg_->optim.penalty_epsilon);
-    double dev_border_omega = penaltyBoundToIntervalDerivative(omega, cfg_->robot.max_vel_theta,cfg_->optim.penalty_epsilon);
-
-    _jacobianOplus[0].resize(2,3); // conf1
-    _jacobianOplus[1].resize(2,3); // conf2
-    _jacobianOplus[2].resize(2,1); // deltaT
-
-//  if (aux1==0) aux1=1e-6;
-//  if (aux2==0) aux2=1e-6;
-
-    if (dev_border_vel!=0)
-    {
-      double aux3 = dev_border_vel / aux1;
-      _jacobianOplus[0](0,0) = -deltaS[0] * aux3; // vel x1
-      _jacobianOplus[0](0,1) = -deltaS[1] * aux3; // vel y1
-      _jacobianOplus[1](0,0) = deltaS[0] * aux3; // vel x2
-      _jacobianOplus[1](0,1) = deltaS[1] * aux3; // vel y2
-      _jacobianOplus[2](0,0) = -vel * aux2 * dev_border_vel; // vel deltaT
-    }
-    else
-    {
-      _jacobianOplus[0](0,0) = 0; // vel x1
-      _jacobianOplus[0](0,1) = 0; // vel y1
-      _jacobianOplus[1](0,0) = 0; // vel x2
-      _jacobianOplus[1](0,1) = 0; // vel y2
-      _jacobianOplus[2](0,0) = 0; // vel deltaT
-    }
-
-    if (dev_border_omega!=0)
-    {
-      double aux4 = aux2 * dev_border_omega;
-      _jacobianOplus[2](1,0) = -omega * aux4; // omega deltaT
-      _jacobianOplus[0](1,2) = -aux4; // omega angle1
-      _jacobianOplus[1](1,2) = aux4; // omega angle2
-    }
-    else
-    {
-      _jacobianOplus[2](1,0) = 0; // omega deltaT
-      _jacobianOplus[0](1,2) = 0; // omega angle1
-      _jacobianOplus[1](1,2) = 0; // omega angle2
-    }
-
-    _jacobianOplus[0](1,0) = 0; // omega x1
-    _jacobianOplus[0](1,1) = 0; // omega y1
-    _jacobianOplus[1](1,0) = 0; // omega x2
-    _jacobianOplus[1](1,1) = 0; // omega y2
-    _jacobianOplus[0](0,2) = 0; // vel angle1
-    _jacobianOplus[1](0,2) = 0; // vel angle2
-  }
-#endif
-#endif
+    bool exact_arc_length_ = false;
+    double max_vel_x_backwards_ = 0.4;
+    double penalty_epsilon_ = 0;
 
   public:
     EIGEN_MAKE_ALIGNED_OPERATOR_NEW
@@ -246,14 +176,14 @@ namespace hateb_local_planner
      */
     void computeError()
     {
-      ROS_ASSERT_MSG(cfg_, "You must call setHATebConfig on EdgeVelocityHolonomic()");
+      // ROS_ASSERT_MSG(cfg_, "You must call setHATebConfig on EdgeVelocityHolonomic()");
       const VertexPose *conf1 = static_cast<const VertexPose *>(_vertices[0]);
       const VertexPose *conf2 = static_cast<const VertexPose *>(_vertices[1]);
       const VertexTimeDiff *deltaT = static_cast<const VertexTimeDiff *>(_vertices[2]);
 
-      double vel_linear_x = cfg_->robot.max_vel_x;
-      double vel_linear_y = cfg_->robot.max_vel_y;
-      double vel_theta = cfg_->robot.max_vel_theta;
+      double vel_linear_x = 0.4;
+      double vel_linear_y = 0.0;
+      double vel_theta = 1.0;
 
       if (mode == 3)
       {
@@ -275,17 +205,15 @@ namespace hateb_local_planner
       double vy = r_dy / deltaT->estimate();
       double omega = g2o::normalize_theta(conf2->theta() - conf1->theta()) / deltaT->estimate();
 
-      _error[0] = penaltyBoundToInterval(vx, -cfg_->robot.max_vel_x_backwards, vel_linear_x, cfg_->optim.penalty_epsilon);
+      _error[0] = penaltyBoundToInterval(vx, -max_vel_x_backwards_, vel_linear_x, penalty_epsilon_);
       _error[1] = penaltyBoundToInterval(vy, vel_linear_y, 0.0); // we do not apply the penalty epsilon here, since the velocity could be close to zero
-      _error[2] = penaltyBoundToInterval(omega, vel_theta, cfg_->optim.penalty_epsilon);
+      _error[2] = penaltyBoundToInterval(omega, vel_theta, penalty_epsilon_);
 
-      ROS_ASSERT_MSG(std::isfinite(_error[0]) && std::isfinite(_error[1]) && std::isfinite(_error[2]),
-                     "EdgeVelocityHolonomic::computeError() _error[0]=%f _error[1]=%f _error[2]=%f\n", _error[0], _error[1], _error[2]);
+      assert(std::isfinite(_error[0]) && std::isfinite(_error[1]) && std::isfinite(_error[2]));
     }
 
-    void setParameters(const HATebConfig &cfg, const BaseRobotFootprintModel *robot_model, const int isMode)
+    void setParameters(const BaseRobotFootprintModel *robot_model, const int isMode)
     {
-      cfg_ = &cfg;
       robot_model_ = robot_model;
       mode = isMode;
     }
@@ -294,6 +222,8 @@ namespace hateb_local_planner
     const BaseRobotFootprintModel *robot_model_;
     Obstacle *obs_ = new PointObstacle();
     int mode = 0;
+    double max_vel_x_backwards_ = 0.4;
+    double penalty_epsilon_ = 0;
 
   public:
     EIGEN_MAKE_ALIGNED_OPERATOR_NEW
@@ -319,7 +249,7 @@ namespace hateb_local_planner
      */
     void computeError()
     {
-      ROS_ASSERT_MSG(cfg_, "You must call setHATebConfig on EdgeVelocityHolonomic()");
+      // ROS_ASSERT_MSG(cfg_, "You must call setHATebConfig on EdgeVelocityHolonomic()");
       const VertexPose *conf1 = static_cast<const VertexPose *>(_vertices[0]);
       const VertexPose *conf2 = static_cast<const VertexPose *>(_vertices[1]);
       const VertexTimeDiff *deltaT = static_cast<const VertexTimeDiff *>(_vertices[2]);
@@ -337,11 +267,11 @@ namespace hateb_local_planner
       double vy = r_dy / deltaT->estimate();
       double omega = g2o::normalize_theta(conf2->theta() - conf1->theta()) / deltaT->estimate();
 
-      _error[0] = penaltyBoundToInterval(vx, -cfg_->agent.max_vel_x_backwards, cfg_->agent.max_vel_x, cfg_->optim.penalty_epsilon);
-      _error[1] = penaltyBoundToInterval(vy, cfg_->agent.max_vel_y, 0.0); // we do not apply the penalty epsilon here, since the velocity could be close to zero
-      _error[2] = penaltyBoundToInterval(omega, cfg_->agent.max_vel_theta, cfg_->optim.penalty_epsilon);
+      _error[0] = penaltyBoundToInterval(vx, max_vel_x_backwards_, max_vel_x_, penalty_epsilon_);
+      _error[1] = penaltyBoundToInterval(vy, max_vel_y_, 0.0); // we do not apply the penalty epsilon here, since the velocity could be close to zero
+      _error[2] = penaltyBoundToInterval(omega, max_vel_theta_, penalty_epsilon_);
       // std::cout << "nominal_vel " <<nominal_vel_<< '\n';
-      if (cfg_->hateb.use_agent_elastic_vel)
+      if (use_agent_elastic_vel_)
       {
         double vel_diff = std::abs(nominal_vel_ - vel);
         _error[3] = vel_diff;
@@ -351,18 +281,23 @@ namespace hateb_local_planner
         _error[3] = 0.0;
       }
 
-      ROS_ASSERT_MSG(std::isfinite(_error[0]) && std::isfinite(_error[1]) && std::isfinite(_error[2]),
-                     "EdgeVelocityHolonomicAgent::computeError() _error[0]=%f _error[1]=%f _error[2]=%f _error[3]=%f\n", _error[0], _error[1], _error[2], _error[3]);
+      assert(std::isfinite(_error[0]) && std::isfinite(_error[1]) && std::isfinite(_error[2]));
     }
 
-    void setParameters(const HATebConfig &cfg, const double nominal_vel)
+    void setParameters(const double nominal_vel)
     {
-      cfg_ = &cfg;
       nominal_vel_ = nominal_vel;
     }
 
   protected:
+    // ! param configs
+    double max_vel_x_ = 0.4;
+    double max_vel_y_ = 0.4;
+    double max_vel_theta_ = 1.0;
     double nominal_vel_ = 0.0;
+    double max_vel_x_backwards_ = 0.4;
+    double penalty_epsilon_ = 0;
+    bool use_agent_elastic_vel_ = true;
 
   public:
     EIGEN_MAKE_ALIGNED_OPERATOR_NEW
@@ -381,7 +316,7 @@ namespace hateb_local_planner
 
     void computeError()
     {
-      ROS_ASSERT_MSG(cfg_, "You must call setHATebConfig on EdgeVelocityAgent()");
+      // ROS_ASSERT_MSG(cfg_, "You must call setHATebConfig on EdgeVelocityAgent()");
       const VertexPose *conf1 = static_cast<const VertexPose *>(_vertices[0]);
       const VertexPose *conf2 = static_cast<const VertexPose *>(_vertices[1]);
       const VertexTimeDiff *deltaT = static_cast<const VertexTimeDiff *>(_vertices[2]);
@@ -390,7 +325,7 @@ namespace hateb_local_planner
 
       double dist = deltaS.norm();
       double angle_diff = g2o::normalize_theta(conf2->theta() - conf1->theta());
-      if (cfg_->trajectory.exact_arc_length && angle_diff != 0)
+      if (exact_arc_length_ && angle_diff != 0)
       {
         double radius = dist / (2 * sin(angle_diff / 2));
         dist = fabs(angle_diff * radius); // actual arg length!
@@ -402,10 +337,10 @@ namespace hateb_local_planner
 
       double omega = angle_diff / deltaT->estimate();
 
-      _error[0] = penaltyBoundToInterval(vel, -cfg_->agent.max_vel_x_backwards, cfg_->agent.max_vel_x, cfg_->optim.penalty_epsilon);
-      _error[1] = penaltyBoundToInterval(omega, cfg_->agent.max_vel_theta, cfg_->optim.penalty_epsilon);
+      _error[0] = penaltyBoundToInterval(vel, -max_vel_x_backwards_, max_vel_x_, penalty_epsilon_);
+      _error[1] = penaltyBoundToInterval(omega, max_vel_theta_, penalty_epsilon_);
 
-      if (cfg_->hateb.use_agent_elastic_vel)
+      if (use_agent_elastic_vel_)
       {
         double vel_diff = std::abs(nominal_vel_ - vel);
         _error[2] = vel_diff;
@@ -415,17 +350,23 @@ namespace hateb_local_planner
         _error[2] = 0.0;
       }
 
-      ROS_ASSERT_MSG(std::isfinite(_error[0]), "EdgeVelocityAgent::computeError() _error[0]=%f _error[1]=%f\n", _error[0], _error[1]);
+      assert(std::isfinite(_error[0]));
     }
 
-    void setParameters(const HATebConfig &cfg, const double nominal_vel)
+    void setParameters(const double nominal_vel)
     {
-      cfg_ = &cfg;
       nominal_vel_ = nominal_vel;
     }
 
   protected:
+    double exact_arc_length_ = false;
     double nominal_vel_ = 0.0;
+    double max_vel_x_backwards_ = 0.4;
+    double max_vel_x_ = 0.4;
+    double max_vel_theta_ = 1.0;
+    double penalty_epsilon_ = 0;
+    double use_agent_elastic_vel_ = true;
+
     //
     // ErrorVector &getError() {
     //   computeError();

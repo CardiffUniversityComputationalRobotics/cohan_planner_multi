@@ -44,10 +44,12 @@
 #ifndef _EDGE_KINEMATICS_H
 #define _EDGE_KINEMATICS_H
 
-#include <hateb_local_planner/g2o_types/vertex_pose.h>
-#include <hateb_local_planner/g2o_types/penalties.h>
-#include <hateb_local_planner/g2o_types/base_teb_edges.h>
-#include <hateb_local_planner/hateb_config.h>
+#include <cassert>
+
+#include <g2o_types/vertex_pose.h>
+#include <g2o_types/penalties.h>
+#include <g2o_types/base_teb_edges.h>
+// #include <hateb_config.h>
 
 #include <cmath>
 
@@ -86,7 +88,7 @@ namespace hateb_local_planner
      */
     void computeError()
     {
-      ROS_ASSERT_MSG(cfg_, "You must call setHATebConfig on EdgeKinematicsDiffDrive()");
+      // ROS_ASSERT_MSG(cfg_, "You must call setHATebConfig on EdgeKinematicsDiffDrive()");
       const VertexPose *conf1 = static_cast<const VertexPose *>(_vertices[0]);
       const VertexPose *conf2 = static_cast<const VertexPose *>(_vertices[1]);
 
@@ -100,54 +102,8 @@ namespace hateb_local_planner
       _error[1] = penaltyBoundFromBelow(deltaS.dot(angle_vec), 0, 0);
       // epsilon=0, otherwise it pushes the first bandpoints away from start
 
-      ROS_ASSERT_MSG(std::isfinite(_error[0]) && std::isfinite(_error[1]), "EdgeKinematicsDiffDrive::computeError() _error[0]=%f _error[1]=%f\n", _error[0], _error[1]);
+      assert(std::isfinite(_error[0]) && std::isfinite(_error[1]));
     }
-
-#ifdef USE_ANALYTIC_JACOBI
-#if 1
-    /**
-     * @brief Jacobi matrix of the cost function specified in computeError().
-     */
-    void linearizeOplus()
-    {
-      ROS_ASSERT_MSG(cfg_, "You must call setHATebConfig on EdgeKinematicsDiffDrive()");
-      const VertexPose *conf1 = static_cast<const VertexPose *>(_vertices[0]);
-      const VertexPose *conf2 = static_cast<const VertexPose *>(_vertices[1]);
-
-      Eigen::Vector2d deltaS = conf2->position() - conf1->position();
-
-      double cos1 = cos(conf1->theta());
-      double cos2 = cos(conf2->theta());
-      double sin1 = sin(conf1->theta());
-      double sin2 = sin(conf2->theta());
-      double aux1 = sin1 + sin2;
-      double aux2 = cos1 + cos2;
-
-      double dd_error_1 = deltaS[0] * cos1;
-      double dd_error_2 = deltaS[1] * sin1;
-      double dd_dev = penaltyBoundFromBelowDerivative(dd_error_1 + dd_error_2, 0, 0);
-
-      double dev_nh_abs = g2o::sign((cos(conf1->theta()) + cos(conf2->theta())) * deltaS[1] -
-                                    (sin(conf1->theta()) + sin(conf2->theta())) * deltaS[0]);
-
-      // conf1
-      _jacobianOplusXi(0, 0) = aux1 * dev_nh_abs;                               // nh x1
-      _jacobianOplusXi(0, 1) = -aux2 * dev_nh_abs;                              // nh y1
-      _jacobianOplusXi(1, 0) = -cos1 * dd_dev;                                  // drive-dir x1
-      _jacobianOplusXi(1, 1) = -sin1 * dd_dev;                                  // drive-dir y1
-      _jacobianOplusXi(0, 2) = (-dd_error_2 - dd_error_1) * dev_nh_abs;         // nh angle
-      _jacobianOplusXi(1, 2) = (-sin1 * deltaS[0] + cos1 * deltaS[1]) * dd_dev; // drive-dir angle1
-
-      // conf2
-      _jacobianOplusXj(0, 0) = -aux1 * dev_nh_abs;                                  // nh x2
-      _jacobianOplusXj(0, 1) = aux2 * dev_nh_abs;                                   // nh y2
-      _jacobianOplusXj(1, 0) = cos1 * dd_dev;                                       // drive-dir x2
-      _jacobianOplusXj(1, 1) = sin1 * dd_dev;                                       // drive-dir y2
-      _jacobianOplusXj(0, 2) = (-sin2 * deltaS[1] - cos2 * deltaS[0]) * dev_nh_abs; // nh angle
-      _jacobianOplusXj(1, 2) = 0;                                                   // drive-dir angle1
-    }
-#endif
-#endif
 
   public:
     EIGEN_MAKE_ALIGNED_OPERATOR_NEW
@@ -191,7 +147,7 @@ namespace hateb_local_planner
      */
     void computeError()
     {
-      ROS_ASSERT_MSG(cfg_, "You must call setHATebConfig on EdgeKinematicsCarlike()");
+      // ROS_ASSERT_MSG(cfg_, "You must call setHATebConfig on EdgeKinematicsCarlike()");
       const VertexPose *conf1 = static_cast<const VertexPose *>(_vertices[0]);
       const VertexPose *conf2 = static_cast<const VertexPose *>(_vertices[1]);
 
@@ -203,15 +159,19 @@ namespace hateb_local_planner
       // limit minimum turning radius
       double angle_diff = g2o::normalize_theta(conf2->theta() - conf1->theta());
       if (angle_diff == 0)
-        _error[1] = 0;                            // straight line motion
-      else if (cfg_->trajectory.exact_arc_length) // use exact computation of the radius
-        _error[1] = penaltyBoundFromBelow(fabs(deltaS.norm() / (2 * sin(angle_diff / 2))), cfg_->robot.min_turning_radius, 0.0);
+        _error[1] = 0;            // straight line motion
+      else if (exact_arc_length_) // use exact computation of the radius
+        _error[1] = penaltyBoundFromBelow(fabs(deltaS.norm() / (2 * sin(angle_diff / 2))), min_turning_radius_, 0.0);
       else
-        _error[1] = penaltyBoundFromBelow(deltaS.norm() / fabs(angle_diff), cfg_->robot.min_turning_radius, 0.0);
+        _error[1] = penaltyBoundFromBelow(deltaS.norm() / fabs(angle_diff), min_turning_radius_, 0.0);
       // This edge is not affected by the epsilon parameter, the user might add an exra margin to the min_turning_radius parameter.
 
-      ROS_ASSERT_MSG(std::isfinite(_error[0]) && std::isfinite(_error[1]), "EdgeKinematicsCarlike::computeError() _error[0]=%f _error[1]=%f\n", _error[0], _error[1]);
+      assert(std::isfinite(_error[0]) && std::isfinite(_error[1]));
     }
+
+  protected:
+    bool exact_arc_length_ = false;
+    double min_turning_radius_ = 0.5;
 
   public:
     EIGEN_MAKE_ALIGNED_OPERATOR_NEW

@@ -43,12 +43,14 @@
 #ifndef EDGE_OBSTACLE_H_
 #define EDGE_OBSTACLE_H_
 
-#include <hateb_local_planner/obstacles.h>
-#include <hateb_local_planner/robot_footprint_model.h>
-#include <hateb_local_planner/g2o_types/vertex_pose.h>
-#include <hateb_local_planner/g2o_types/base_teb_edges.h>
-#include <hateb_local_planner/g2o_types/penalties.h>
-#include <hateb_local_planner/hateb_config.h>
+#include <cassert>
+
+#include <obstacles.h>
+#include <robot_footprint_model.h>
+#include <g2o_types/vertex_pose.h>
+#include <g2o_types/base_teb_edges.h>
+#include <g2o_types/penalties.h>
+// #include <hateb_config.h>
 
 namespace hateb_local_planner
 {
@@ -81,72 +83,27 @@ namespace hateb_local_planner
      */
     void computeError()
     {
-      ROS_ASSERT_MSG(cfg_ && _measurement && robot_model_, "You must call setHATebConfig(), setObstacle() and setRobotModel() on EdgeObstacle()");
+      assert(_measurement && robot_model_);
       const VertexPose *bandpt = static_cast<const VertexPose *>(_vertices[0]);
 
       double dist = robot_model_->calculateDistance(bandpt->pose(), _measurement);
 
       // Original obstacle cost.
-      _error[0] = penaltyBoundFromBelow(dist, cfg_->obstacles.min_obstacle_dist, cfg_->optim.penalty_epsilon);
+      _error[0] = penaltyBoundFromBelow(dist, min_obstacle_dist_, penalty_epsilon_);
       // std::cout << "_error[0] obstacle cost: "<<_error[0] << '\n';
-      if (cfg_->optim.obstacle_cost_exponent != 1.0 && cfg_->obstacles.min_obstacle_dist > 0.0)
+      if (obstacle_cost_exponent_ != 1.0 && min_obstacle_dist_ > 0.0)
       {
         // Optional non-linear cost. Note the max cost (before weighting) is
         // the same as the straight line version and that all other costs are
         // below the straight line (for positive exponent), so it may be
         // necessary to increase weight_obstacle and/or the inflation_weight
         // when using larger exponents.
-        _error[0] = cfg_->obstacles.min_obstacle_dist * std::pow(_error[0] / cfg_->obstacles.min_obstacle_dist, cfg_->optim.obstacle_cost_exponent);
+        _error[0] = min_obstacle_dist_ * std::pow(_error[0] / min_obstacle_dist_, obstacle_cost_exponent_);
         // _error[0] = penaltyBoundFromBelowExp(dist, cfg_->obstacles.min_obstacle_dist, cfg_->optim.penalty_epsilon,cfg_->obstacles.obstacle_cost_mult);
       }
 
-      ROS_ASSERT_MSG(std::isfinite(_error[0]), "EdgeObstacle::computeError() _error[0]=%f\n", _error[0]);
+      assert(std::isfinite(_error[0]));
     }
-
-#ifdef USE_ANALYTIC_JACOBI
-#if 0
-
-  /**
-   * @brief Jacobi matrix of the cost function specified in computeError().
-   */
-  void linearizeOplus()
-  {
-    ROS_ASSERT_MSG(cfg_, "You must call setHATebConfig on EdgePointObstacle()");
-    const VertexPose* bandpt = static_cast<const VertexPose*>(_vertices[0]);
-
-    Eigen::Vector2d deltaS = *_measurement - bandpt->position();
-    double angdiff = atan2(deltaS[1],deltaS[0])-bandpt->theta();
-
-    double dist_squared = deltaS.squaredNorm();
-    double dist = sqrt(dist_squared);
-
-    double aux0 = sin(angdiff);
-    double dev_left_border = penaltyBoundFromBelowDerivative(dist*fabs(aux0),cfg_->obstacles.min_obstacle_dist,cfg_->optim.penalty_epsilon);
-
-    if (dev_left_border==0)
-    {
-      _jacobianOplusXi( 0 , 0 ) = 0;
-      _jacobianOplusXi( 0 , 1 ) = 0;
-      _jacobianOplusXi( 0 , 2 ) = 0;
-      return;
-    }
-
-    double aux1 = -fabs(aux0) / dist;
-    double dev_norm_x = deltaS[0]*aux1;
-    double dev_norm_y = deltaS[1]*aux1;
-
-    double aux2 = cos(angdiff) * g2o::sign(aux0);
-    double aux3 = aux2 / dist_squared;
-    double dev_proj_x = aux3 * deltaS[1] * dist;
-    double dev_proj_y = -aux3 * deltaS[0] * dist;
-    double dev_proj_angle = -aux2;
-
-    _jacobianOplusXi( 0 , 0 ) = dev_left_border * ( dev_norm_x + dev_proj_x );
-    _jacobianOplusXi( 0 , 1 ) = dev_left_border * ( dev_norm_y + dev_proj_y );
-    _jacobianOplusXi( 0 , 2 ) = dev_left_border * dev_proj_angle;
-  }
-#endif
-#endif
 
     /**
      * @brief Set pointer to associated obstacle for the underlying cost function
@@ -172,22 +129,25 @@ namespace hateb_local_planner
      * @param robot_model Robot model required for distance calculation
      * @param obstacle 2D position vector containing the position of the obstacle
      */
-    void setParameters(const HATebConfig &cfg, const BaseRobotFootprintModel *robot_model, const Obstacle *obstacle)
+    void setParameters(const BaseRobotFootprintModel *robot_model, const Obstacle *obstacle)
     {
-      cfg_ = &cfg;
       robot_model_ = robot_model;
       _measurement = obstacle;
     }
 
   protected:
     const BaseRobotFootprintModel *robot_model_; //!< Store pointer to robot_model
+    // ! CONFIG PARAMETERS
+    double min_obstacle_dist_ = 0.1;
+    double penalty_epsilon_ = 0.5;
+    double obstacle_cost_exponent_ = 20;
 
   public:
     EIGEN_MAKE_ALIGNED_OPERATOR_NEW
   };
 
   /**
-   * @class EdgeInflatedObstacle
+   * @class EdgeInflatedObstaclee
    * @brief Edge defining the cost function for keeping a minimum distance from inflated obstacles.
    *
    * The edge depends on a single vertex \f$ \mathbf{s}_i \f$ and minimizes: \n
@@ -216,30 +176,30 @@ namespace hateb_local_planner
      */
     void computeError()
     {
-      ROS_ASSERT_MSG(cfg_ && _measurement && robot_model_, "You must call setHATebConfig(), setObstacle() and setRobotModel() on EdgeInflatedObstacle()");
+      assert(_measurement && robot_model_);
       const VertexPose *bandpt = static_cast<const VertexPose *>(_vertices[0]);
 
       double dist = robot_model_->calculateDistance(bandpt->pose(), _measurement);
 
       // Original "straight line" obstacle cost. The max possible value
       // before weighting is min_obstacle_dist
-      _error[0] = penaltyBoundFromBelow(dist, cfg_->obstacles.min_obstacle_dist, cfg_->optim.penalty_epsilon);
+      _error[0] = penaltyBoundFromBelow(dist, min_obstacle_dist_, penalty_epsilon_);
       // std::cout << "_error[0] inflated obstacle cost: "<<_error[0] << '\n';
 
-      if (cfg_->optim.obstacle_cost_exponent != 1.0 && cfg_->obstacles.min_obstacle_dist > 0.0)
+      if (obstacle_cost_exponent_ != 1.0 && min_obstacle_dist_ > 0.0)
       {
         // Optional non-linear cost. Note the max cost (before weighting) is
         // the same as the straight line version and that all other costs are
         // below the straight line (for positive exponent), so it may be
         // necessary to increase weight_obstacle and/or the inflation_weight
         // when using larger exponents.
-        _error[0] = cfg_->obstacles.min_obstacle_dist * std::pow(_error[0] / cfg_->obstacles.min_obstacle_dist, cfg_->optim.obstacle_cost_exponent);
+        _error[0] = min_obstacle_dist_ * std::pow(_error[0] / min_obstacle_dist_, obstacle_cost_exponent_);
       }
 
       // Additional linear inflation cost
-      _error[1] = penaltyBoundFromBelow(dist, cfg_->obstacles.inflation_dist, 0.0);
+      _error[1] = penaltyBoundFromBelow(dist, inflation_dist_, 0.0);
 
-      ROS_ASSERT_MSG(std::isfinite(_error[0]) && std::isfinite(_error[1]), "EdgeInflatedObstacle::computeError() _error[0]=%f, _error[1]=%f\n", _error[0], _error[1]);
+      assert(std::isfinite(_error[0]) && std::isfinite(_error[1]));
     }
 
     /**
@@ -266,15 +226,20 @@ namespace hateb_local_planner
      * @param robot_model Robot model required for distance calculation
      * @param obstacle 2D position vector containing the position of the obstacle
      */
-    void setParameters(const HATebConfig &cfg, const BaseRobotFootprintModel *robot_model, const Obstacle *obstacle)
+    void setParameters(const BaseRobotFootprintModel *robot_model, const Obstacle *obstacle)
     {
-      cfg_ = &cfg;
       robot_model_ = robot_model;
       _measurement = obstacle;
     }
 
   protected:
     const BaseRobotFootprintModel *robot_model_; //!< Store pointer to robot_model
+
+    // ! CONFIG PARAMETERS
+    double min_obstacle_dist_ = 0.1;
+    double penalty_epsilon_ = 0.5;
+    double obstacle_cost_exponent_ = 20;
+    double inflation_dist_ = 0.1;
 
   public:
     EIGEN_MAKE_ALIGNED_OPERATOR_NEW

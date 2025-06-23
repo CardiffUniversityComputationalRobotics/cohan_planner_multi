@@ -45,11 +45,12 @@
 #define EDGE_SHORTEST_PATH_H_
 
 #include <float.h>
+#include <cassert>
 
-#include <base_local_planner/BaseLocalPlannerConfig.h>
+// #include <base_local_planner/BaseLocalPlannerConfig.h>
 
-#include <hateb_local_planner/g2o_types/base_teb_edges.h>
-#include <hateb_local_planner/g2o_types/vertex_pose.h>
+#include <g2o_types/base_teb_edges.h>
+#include <g2o_types/vertex_pose.h>
 
 #include <Eigen/Core>
 
@@ -75,12 +76,12 @@ namespace hateb_local_planner
      */
     void computeError()
     {
-      ROS_ASSERT_MSG(cfg_, "You must call setHATebConfig on EdgeShortestPath()");
+      // ROS_ASSERT_MSG(cfg_, "You must call setHATebConfig on EdgeShortestPath()");
       const VertexPose *pose1 = static_cast<const VertexPose *>(_vertices[0]);
       const VertexPose *pose2 = static_cast<const VertexPose *>(_vertices[1]);
       _error[0] = (pose2->position() - pose1->position()).norm();
 
-      ROS_ASSERT_MSG(std::isfinite(_error[0]), "EdgeShortestPath::computeError() _error[0]=%f\n", _error[0]);
+      assert(std::isfinite(_error[0]));
     }
 
   public:

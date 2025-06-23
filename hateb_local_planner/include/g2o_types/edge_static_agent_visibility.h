@@ -35,10 +35,12 @@
 #ifndef EDGE_STATIC_AGENT_VISIBILITY_H_
 #define EDGE_STATIC_AGENT_VISIBILITY_H_
 
-#include <hateb_local_planner/g2o_types/vertex_pose.h>
-#include <hateb_local_planner/g2o_types/penalties.h>
-#include <hateb_local_planner/hateb_config.h>
-#include <hateb_local_planner/g2o_types/base_teb_edges.h>
+#include <cassert>
+
+#include <g2o_types/vertex_pose.h>
+#include <g2o_types/penalties.h>
+// #include <hateb_config.h>
+#include <g2o_types/base_teb_edges.h>
 
 // #include "g2o/core/base_unary_edge.h"
 
@@ -55,7 +57,7 @@ namespace hateb_local_planner
 
     void computeError()
     {
-      ROS_ASSERT_MSG(cfg_, "You must call setParameters() on EdgeStaticAgentVisibility()");
+      // ROS_ASSERT_MSG(cfg_, "You must call setParameters() on EdgeStaticAgentVisibility()");
       const VertexPose *robot_bandpt = static_cast<const VertexPose *>(_vertices[0]);
 
       Eigen::Vector2d d_rtoh = static_agent_.position() - robot_bandpt->position();
@@ -66,7 +68,7 @@ namespace hateb_local_planner
       double c_visibility = 0.0;
       double ang = agentLookAt.dot(robotLookAt);
 
-      if (deltaPsi >= cfg_->agent.fov * M_PI / 180)
+      if (deltaPsi >= fov_ * M_PI / 180)
       {
         if (ang >= 0)
           c_visibility = 5 * ((std::pow(2, -(std::pow(d_rtoh.x(), 2)))) * (std::pow(2, -(std::pow(d_rtoh.y(), 2)))));
@@ -76,20 +78,22 @@ namespace hateb_local_planner
 
       // std::cout << "I am being called\n";
 
-      _error[0] = penaltyBoundFromAbove(c_visibility, cfg_->hateb.visibility_cost_threshold,
-                                        cfg_->optim.penalty_epsilon);
+      _error[0] = penaltyBoundFromAbove(c_visibility, visibility_cost_threshold_,
+                                        penalty_epsilon_);
 
-      ROS_ASSERT_MSG(std::isfinite(_error[0]), "EdgeStaticAgentVisibility::computeError() _error[0]=%f\n", _error[0]);
+      assert(std::isfinite(_error[0]));
     }
 
-    void setParameters(const HATebConfig &cfg, const PoseSE2 &static_agent)
+    void setParameters(const PoseSE2 &static_agent)
     {
-      cfg_ = &cfg;
       static_agent_ = static_agent;
     }
 
   protected:
     PoseSE2 static_agent_;
+    double visibility_cost_threshold_ = 20;
+    double penalty_epsilon_ = 0.5;
+    double fov_ = 180;
 
   public:
     EIGEN_MAKE_ALIGNED_OPERATOR_NEW

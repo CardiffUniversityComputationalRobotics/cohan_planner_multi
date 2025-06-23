@@ -35,13 +35,15 @@
 #ifndef EDGE_AGENT_ROBOT_TTCPLUS_H_
 #define EDGE_AGENT_ROBOT_TTCPLUS_H_
 
-#include <hateb_local_planner/g2o_types/vertex_pose.h>
-#include <hateb_local_planner/g2o_types/vertex_timediff.h>
-#include <hateb_local_planner/g2o_types/penalties.h>
-#include <hateb_local_planner/hateb_config.h>
+#include <cassert>
+
+#include <g2o_types/vertex_pose.h>
+#include <g2o_types/vertex_timediff.h>
+#include <g2o_types/penalties.h>
+// #include <hateb_config.h>
 #include <std_msgs/Header.h>
 #include "sstream"
-#include <hateb_local_planner/g2o_types/base_teb_edges.h>
+#include <g2o_types/base_teb_edges.h>
 
 // #include "g2o/core/base_multi_edge.h"
 
@@ -58,7 +60,7 @@ namespace hateb_local_planner
 
     void computeError()
     {
-      ROS_ASSERT_MSG(cfg_ && (radius_sum_ < std::numeric_limits<double>::infinity()), "You must call setParameters() on EdgeAgentRobotTTCplus()");
+      assert(radius_sum_ < std::numeric_limits<double>::infinity());
       const VertexPose *robot_bandpt = static_cast<const VertexPose *>(_vertices[0]);
       const VertexPose *robot_bandpt_nxt = static_cast<const VertexPose *>(_vertices[1]);
       const VertexTimeDiff *dt_robot = static_cast<const VertexTimeDiff *>(_vertices[2]);
@@ -119,15 +121,15 @@ namespace hateb_local_planner
         i++;
         j = 0;
         // std::cout << "time " << dt_robot->dt() << '\n';
-        if (r_dt >= (cfg_->hateb.ttcplus_timer))
+        if (r_dt >= (ttcplus_timer_))
         { // timer for number of poses to check
           //_error[0] = penaltyBoundFromBelow(ttcplus, cfg_->hateb.ttcplus_threshold, cfg_->optim.penalty_epsilon)/cfg_->hateb.ttcplus_threshold;
-          _error[0] = penaltyBoundFromBelow(ttcplus, cfg_->hateb.ttcplus_threshold, cfg_->optim.penalty_epsilon);
+          _error[0] = penaltyBoundFromBelow(ttcplus, ttcplus_threshold_, penalty_epsilon_);
           // std::cout << "error_[0] after penaltybound"<< _error[0] << '\n';
 
-          if (cfg_->hateb.scale_agent_robot_ttcplus_c)
+          if (scale_agent_robot_ttcplus_c_)
           {
-            _error[0] = _error[0] * cfg_->optim.agent_robot_ttcplus_scale_alpha / C_sq;
+            _error[0] = _error[0] * agent_robot_ttcplus_scale_alpha_ / C_sq;
           }
         }
       }
@@ -137,7 +139,7 @@ namespace hateb_local_planner
         // no collision possible
         j++;
         r_dt_miss += dt_robot->dt();
-        if (r_dt_miss >= 5 * (cfg_->hateb.ttcplus_timer))
+        if (r_dt_miss >= 5 * (ttcplus_timer_))
         { // Check if the misses are consecutive for atleast 5 times of the timer
           i = 0;
           j = 0;
@@ -151,16 +153,14 @@ namespace hateb_local_planner
       }
 
       // std::cout << "error_[0]"<< _error[0] << '\n';
-      ROS_DEBUG_THROTTLE(0.5, "ttcplus value : %f", ttcplus);
+      // ROS_DEBUG_THROTTLE(0.5, "ttcplus value : %f", ttcplus);
 
-      ROS_ASSERT_MSG(std::isfinite(_error[0]),
-                     "EdgeAgentRobot::computeError() _error[0]=%f\n", _error[0]);
+      assert(std::isfinite(_error[0]));
     }
 
-    void setParameters(const HATebConfig &cfg, const double &robot_radius,
+    void setParameters(const double &robot_radius,
                        const double &agent_radius)
     {
-      cfg_ = &cfg;
       radius_sum_ = robot_radius + agent_radius;
       radius_sum_sq_ = radius_sum_ * radius_sum_;
     }
@@ -168,6 +168,13 @@ namespace hateb_local_planner
   protected:
     double radius_sum_ = std::numeric_limits<double>::infinity();
     double radius_sum_sq_ = std::numeric_limits<double>::infinity();
+
+    // ! CONFIG PARAMETERS
+    double ttcplus_timer_ = 50;
+    double ttcplus_threshold_ = 10;
+    double penalty_epsilon_ = 0.5;
+    bool scale_agent_robot_ttcplus_c_ = true;
+    double agent_robot_ttcplus_scale_alpha_ = 20;
 
   public:
     EIGEN_MAKE_ALIGNED_OPERATOR_NEW

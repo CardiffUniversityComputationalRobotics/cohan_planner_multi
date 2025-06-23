@@ -43,8 +43,10 @@
 #ifndef EDGE_VIA_POINT_H_
 #define EDGE_VIA_POINT_H_
 
-#include <hateb_local_planner/g2o_types/vertex_pose.h>
-#include <hateb_local_planner/g2o_types/base_teb_edges.h>
+#include <cassert>
+
+#include <g2o_types/vertex_pose.h>
+#include <g2o_types/base_teb_edges.h>
 
 #include "g2o/core/base_unary_edge.h"
 
@@ -78,13 +80,13 @@ namespace hateb_local_planner
      */
     void computeError()
     {
-      ROS_ASSERT_MSG(cfg_ && _measurement, "You must call setHATebConfig(), setViaPoint() on EdgeViaPoint()");
+      assert(_measurement);
       const VertexPose *bandpt = static_cast<const VertexPose *>(_vertices[0]);
 
       _error[0] = (bandpt->position() - *_measurement).norm();
       // std::cout << "_error[0] of via_point : " << _error[0]<< '\n';
 
-      ROS_ASSERT_MSG(std::isfinite(_error[0]), "EdgeViaPoint::computeError() _error[0]=%f\n", _error[0]);
+      assert(std::isfinite(_error[0]));
     }
 
     /**
@@ -101,9 +103,8 @@ namespace hateb_local_planner
      * @param cfg HATebConfig class
      * @param via_point 2D position vector containing the position of the via point
      */
-    void setParameters(const HATebConfig &cfg, const Eigen::Vector2d *via_point)
+    void setParameters(const Eigen::Vector2d *via_point)
     {
-      cfg_ = &cfg;
       _measurement = via_point;
     }
 

@@ -49,7 +49,7 @@
 #include <g2o/core/hyper_graph_action.h>
 #include <g2o/stuff/misc.h>
 
-#include <hateb_local_planner/pose_se2.h>
+#include <pose_se2.h>
 
 namespace hateb_local_planner
 {

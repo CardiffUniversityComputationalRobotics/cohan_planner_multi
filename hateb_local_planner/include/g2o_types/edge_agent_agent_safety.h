@@ -35,10 +35,10 @@
 #ifndef EDGE_AGENT_AGENT_SAFETY_H_
 #define EDGE_AGENT_AGENT_SAFETY_H_
 
-#include <hateb_local_planner/g2o_types/penalties.h>
-#include <hateb_local_planner/g2o_types/vertex_pose.h>
-#include <hateb_local_planner/hateb_config.h>
-#include <hateb_local_planner/g2o_types/base_teb_edges.h>
+#include <g2o_types/penalties.h>
+#include <g2o_types/vertex_pose.h>
+// #include <hateb_config.h>
+#include <g2o_types/base_teb_edges.h>
 
 // #include "g2o/core/base_unary_edge.h"
 
@@ -62,16 +62,16 @@ namespace hateb_local_planner
 
     void computeError()
     {
-      ROS_ASSERT_MSG(cfg_ && agent_radius_ < std::numeric_limits<double>::infinity(), "You must call setParameters() on EdgeAgentAgentSafety()");
+      assert(agent_radius_ < std::numeric_limits<double>::infinity());
       const VertexPose *agent1_bandpt = static_cast<const VertexPose *>(_vertices[0]);
       const VertexPose *agent2_bandpt = static_cast<const VertexPose *>(_vertices[1]);
 
       double dist = std::hypot(agent1_bandpt->x() - agent2_bandpt->x(), agent1_bandpt->y() - agent2_bandpt->y()) - (2 * agent_radius_);
 
-      ROS_DEBUG_THROTTLE(0.5, "agent agent external dist = %f", dist);
-      _error[0] = penaltyBoundFromBelowQuad(dist, cfg_->hateb.min_agent_agent_dist, cfg_->optim.penalty_epsilon);
+      // ROS_DEBUG_THROTTLE(0.5, "agent agent external dist = %f", dist);
+      _error[0] = penaltyBoundFromBelowQuad(dist, min_agent_agent_dist_, penalty_epsilon_);
 
-      ROS_ASSERT_MSG(std::isfinite(_error[0]), "EdgeAgentAgentSafety::computeError() _error[0]=%f\n", _error[0]);
+      assert(std::isfinite(_error[0]));
     }
 
     void setAgentRadius(const double agent_radius)
@@ -79,14 +79,15 @@ namespace hateb_local_planner
       agent_radius_ = agent_radius;
     }
 
-    void setParameters(const HATebConfig &cfg, const double agent_radius)
+    void setParameters(const double agent_radius)
     {
-      cfg_ = &cfg;
       agent_radius_ = agent_radius;
     }
 
   protected:
     double agent_radius_ = std::numeric_limits<double>::infinity();
+    double min_agent_agent_dist_ = 0.05;
+    double penalty_epsilon_ = 0;
 
   public:
     EIGEN_MAKE_ALIGNED_OPERATOR_NEW

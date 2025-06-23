@@ -35,11 +35,11 @@
 #ifndef EDGE_AGENT_ROBOT_REL_VELOCIY_H_
 #define EDGE_AGENT_ROBOT_REL_VELOCIY_H_
 
-#include <hateb_local_planner/g2o_types/vertex_pose.h>
-#include <hateb_local_planner/g2o_types/vertex_timediff.h>
-#include <hateb_local_planner/g2o_types/penalties.h>
-#include <hateb_local_planner/hateb_config.h>
-#include <hateb_local_planner/g2o_types/base_teb_edges.h>
+#include <g2o_types/vertex_pose.h>
+#include <g2o_types/vertex_timediff.h>
+#include <g2o_types/penalties.h>
+// #include <hateb_config.h>
+#include <g2o_types/base_teb_edges.h>
 
 // #include "g2o/core/base_multi_edge.h"
 
@@ -56,7 +56,7 @@ namespace hateb_local_planner
 
     void computeError()
     {
-      ROS_ASSERT_MSG(cfg_ && (radius_sum_ < std::numeric_limits<double>::infinity()), "You must call setHATebConfig() on EdgeAgentRobotRelVelocity()");
+      assert(radius_sum_ < std::numeric_limits<double>::infinity());
       const VertexPose *robot_bandpt = static_cast<const VertexPose *>(_vertices[0]);
       const VertexPose *robot_bandpt_nxt = static_cast<const VertexPose *>(_vertices[1]);
       const VertexTimeDiff *dt_robot = static_cast<const VertexTimeDiff *>(_vertices[2]);
@@ -79,17 +79,21 @@ namespace hateb_local_planner
       // double rel_vel_cost = (std::max(robot_vel.dot(d_rtoh), 0.0) + std::max(agent_vel.dot(d_htor), 0.0)) / d_rtoh.dot(d_rtoh); // Problem: Agent velocity is also slowed down
       // double rel_vel_cost = robot_vel.norm()+ (1 / d_rtoh.dot(d_rtoh)); //One of the working ones (problem: direction of vel)
 
-      ROS_DEBUG_THROTTLE(0.5, "rel_vel_cost value : %f", rel_vel_cost);
+      // ROS_DEBUG_THROTTLE(0.5, "rel_vel_cost value : %f", rel_vel_cost);
 
-      _error[0] = penaltyBoundFromAbove(rel_vel_cost, cfg_->hateb.rel_vel_cost_threshold, cfg_->optim.penalty_epsilon);
+      _error[0] = penaltyBoundFromAbove(rel_vel_cost, rel_vel_cost_threshold_, penalty_epsilon_);
 
-      ROS_ASSERT_MSG(std::isfinite(_error[0]), "EdgeAgentRobot::computeError() _error[0]=%f\n", _error[0]);
+      assert(std::isfinite(_error[0]));
     }
 
-    void setParameters(const HATebConfig &cfg)
-    {
-      cfg_ = &cfg;
-    }
+    // void setParameters(const HATebConfig &cfg)
+    // {
+    //   cfg_ = &cfg;
+    // }
+
+  protected:
+    double rel_vel_cost_threshold_ = 5.0;
+    double penalty_epsilon_ = 0.5;
 
   public:
     EIGEN_MAKE_ALIGNED_OPERATOR_NEW

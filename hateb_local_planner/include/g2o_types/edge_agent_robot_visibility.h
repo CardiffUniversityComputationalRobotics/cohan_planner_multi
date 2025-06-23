@@ -35,10 +35,12 @@
 #ifndef EDGE_AGENT_ROBOT_VISIBILITY_H_
 #define EDGE_AGENT_ROBOT_VISIBILITY_H_
 
-#include <hateb_local_planner/g2o_types/vertex_pose.h>
-#include <hateb_local_planner/g2o_types/penalties.h>
-#include <hateb_local_planner/hateb_config.h>
-#include <hateb_local_planner/g2o_types/base_teb_edges.h>
+#include <cassert>
+
+#include <g2o_types/vertex_pose.h>
+#include <g2o_types/penalties.h>
+// #include <hateb_config.h>
+#include <g2o_types/base_teb_edges.h>
 
 // #include "g2o/core/base_unary_edge.h"
 
@@ -55,7 +57,7 @@ namespace hateb_local_planner
 
     void computeError()
     {
-      ROS_ASSERT_MSG(cfg_, "You must call setParameters() on EdgeAgentRobotVisibility()");
+      // ROS_ASSERT_MSG(cfg_, "You must call setParameters() on EdgeAgentRobotVisibility()");
       const VertexPose *robot_bandpt = static_cast<const VertexPose *>(_vertices[0]);
       const VertexPose *agent_bandpt = static_cast<const VertexPose *>(_vertices[1]);
       Eigen::Vector2d d_rtoh = agent_bandpt->position() - robot_bandpt->position();
@@ -68,7 +70,7 @@ namespace hateb_local_planner
       double ang = agentLookAt.dot(robotLookAt);
       // std::cout << "ang " <<ang<< '\n';
 
-      if (deltaPsi >= cfg_->agent.fov * M_PI / 180)
+      if (deltaPsi >= fov_ * M_PI / 180)
       {
         // c_visibility = deltaPsi * ((cos(d_rtoh.x()) + 1) * (cos(d_rtoh.y()) + 1));
         if (ang >= 0)
@@ -77,16 +79,21 @@ namespace hateb_local_planner
           c_visibility = 0.;
       }
 
-      _error[0] = penaltyBoundFromAbove(c_visibility, cfg_->hateb.visibility_cost_threshold,
-                                        cfg_->optim.penalty_epsilon);
+      _error[0] = penaltyBoundFromAbove(c_visibility, visibility_cost_threshold_,
+                                        penalty_epsilon_);
 
-      ROS_ASSERT_MSG(std::isfinite(_error[0]), "EdgeAgentRobotVisibility::computeError() _error[0]=%f\n", _error[0]);
+      assert(std::isfinite(_error[0]));
     }
 
-    void setParameters(const HATebConfig &cfg)
-    {
-      cfg_ = &cfg;
-    }
+    // void setParameters(const HATebConfig &cfg)
+    // {
+    //   cfg_ = &cfg;
+    // }
+
+  protected:
+    double visibility_cost_threshold_ = 20;
+    double penalty_epsilon_ = 0.5;
+    double fov_ = 180;
 
   public:
     EIGEN_MAKE_ALIGNED_OPERATOR_NEW

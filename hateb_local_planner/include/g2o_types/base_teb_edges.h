@@ -44,7 +44,7 @@
 #ifndef _BASE_TEB_EDGES_H_
 #define _BASE_TEB_EDGES_H_
 
-#include <hateb_local_planner/hateb_config.h>
+// #include <hateb_config.h>
 
 #include <g2o/core/base_binary_edge.h>
 #include <g2o/core/base_unary_edge.h>
@@ -126,16 +126,16 @@ namespace hateb_local_planner
      * @brief Assign the HATebConfig class for parameters.
      * @param cfg HATebConfig class
      */
-    void setHATebConfig(const HATebConfig &cfg)
-    {
-      cfg_ = &cfg;
-    }
+    // void setHATebConfig(const HATebConfig &cfg)
+    // {
+    //   cfg_ = &cfg;
+    // }
 
   protected:
     using g2o::BaseUnaryEdge<D, E, VertexXi>::_error;
     using g2o::BaseUnaryEdge<D, E, VertexXi>::_vertices;
 
-    const HATebConfig *cfg_; //!< Store HATebConfig class for parameters
+    // const HATebConfig *cfg_; //!< Store HATebConfig class for parameters
 
   public:
     EIGEN_MAKE_ALIGNED_OPERATOR_NEW
@@ -214,16 +214,16 @@ namespace hateb_local_planner
      * @brief Assign the HATebConfig class for parameters.
      * @param cfg HATebConfig class
      */
-    void setHATebConfig(const HATebConfig &cfg)
-    {
-      cfg_ = &cfg;
-    }
+    // void setHATebConfig(const HATebConfig &cfg)
+    // {
+    //   cfg_ = &cfg;
+    // }
 
   protected:
     using g2o::BaseBinaryEdge<D, E, VertexXi, VertexXj>::_error;
     using g2o::BaseBinaryEdge<D, E, VertexXi, VertexXj>::_vertices;
 
-    const HATebConfig *cfg_; //!< Store HATebConfig class for parameters
+    // const HATebConfig *cfg_; //!< Store HATebConfig class for parameters
 
   public:
     EIGEN_MAKE_ALIGNED_OPERATOR_NEW
@@ -313,16 +313,16 @@ namespace hateb_local_planner
      * @brief Assign the HATebConfig class for parameters.
      * @param cfg HATebConfig class
      */
-    void setHATebConfig(const HATebConfig &cfg)
-    {
-      cfg_ = &cfg;
-    }
+    // void setHATebConfig(const HATebConfig &cfg)
+    // {
+    //   cfg_ = &cfg;
+    // }
 
   protected:
     using g2o::BaseMultiEdge<D, E>::_error;
     using g2o::BaseMultiEdge<D, E>::_vertices;
 
-    const HATebConfig *cfg_; //!< Store TebConfig class for parameters
+    // const HATebConfig *cfg_; //!< Store TebConfig class for parameters
 
   public:
     EIGEN_MAKE_ALIGNED_OPERATOR_NEW

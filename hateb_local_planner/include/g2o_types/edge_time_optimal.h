@@ -46,12 +46,14 @@
 
 #include <float.h>
 
-#include <base_local_planner/BaseLocalPlannerConfig.h>
+// #include <base_local_planner/BaseLocalPlannerConfig.h>
 
-#include <hateb_local_planner/g2o_types/vertex_timediff.h>
-#include <hateb_local_planner/g2o_types/base_teb_edges.h>
-#include <hateb_local_planner/g2o_types/penalties.h>
-#include <hateb_local_planner/hateb_config.h>
+#include <cassert>
+
+#include <g2o_types/vertex_timediff.h>
+#include <g2o_types/base_teb_edges.h>
+#include <g2o_types/penalties.h>
+// #include <hateb_config.h>
 
 #include <Eigen/Core>
 
@@ -85,24 +87,13 @@ namespace hateb_local_planner
      */
     void computeError()
     {
-      ROS_ASSERT_MSG(cfg_, "You must call setHATebConfig on EdgeTimeOptimal()");
+      // ROS_ASSERT_MSG(cfg_, "You must call setHATebConfig on EdgeTimeOptimal()");
       const VertexTimeDiff *timediff = static_cast<const VertexTimeDiff *>(_vertices[0]);
 
       _error[0] = timediff->dt();
 
-      ROS_ASSERT_MSG(std::isfinite(_error[0]), "EdgeTimeOptimal::computeError() _error[0]=%f\n", _error[0]);
+      assert(std::isfinite(_error[0]));
     }
-
-#ifdef USE_ANALYTIC_JACOBI
-    /**
-     * @brief Jacobi matrix of the cost function specified in computeError().
-     */
-    void linearizeOplus()
-    {
-      ROS_ASSERT_MSG(cfg_, "You must call setHATebConfig on EdgeTimeOptimal()");
-      _jacobianOplusXi(0, 0) = 1;
-    }
-#endif
 
   public:
     EIGEN_MAKE_ALIGNED_OPERATOR_NEW

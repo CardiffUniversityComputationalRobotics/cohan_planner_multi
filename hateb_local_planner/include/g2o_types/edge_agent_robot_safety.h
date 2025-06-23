@@ -35,14 +35,16 @@
 #ifndef EDGE_AGENT_ROBOT_SAFETY_H_
 #define EDGE_AGENT_ROBOT_SAFETY_H_
 
-#include <hateb_local_planner/obstacles.h>
-#include <hateb_local_planner/robot_footprint_model.h>
-#include <hateb_local_planner/g2o_types/vertex_pose.h>
-#include <hateb_local_planner/g2o_types/penalties.h>
-#include <hateb_local_planner/hateb_config.h>
-#include <hateb_local_planner/g2o_types/base_teb_edges.h>
+#include <obstacles.h>
+#include <robot_footprint_model.h>
+#include <g2o_types/vertex_pose.h>
+#include <g2o_types/penalties.h>
+// #include <hateb_config.h>
+#include <g2o_types/base_teb_edges.h>
 
 // #include "g2o/core/base_unary_edge.h"
+
+#include <cassert>
 
 namespace hateb_local_planner
 {
@@ -57,7 +59,7 @@ namespace hateb_local_planner
 
     void computeError()
     {
-      ROS_ASSERT_MSG(cfg_ && robot_model_ && agent_radius_ < std::numeric_limits<double>::infinity(), "You must call setParameters() on EdgeAgentRobotSafety()");
+      assert(robot_model_ && agent_radius_ < std::numeric_limits<double>::infinity());
       const VertexPose *robot_bandpt = static_cast<const VertexPose *>(_vertices[0]);
       const VertexPose *agent_bandpt = static_cast<const VertexPose *>(_vertices[1]);
       static_cast<PointObstacle *>(obs_)->setCentroid(agent_bandpt->x(), agent_bandpt->y());
@@ -65,12 +67,12 @@ namespace hateb_local_planner
       double dist = robot_model_->calculateDistance(robot_bandpt->pose(), obs_) - agent_radius_;
       // std::cout << "robot_bandpt->pose() "<<robot_bandpt->pose() << '\n';
 
-      ROS_DEBUG_THROTTLE(0.5, "agent robot dist = %f", dist);
+      // ROS_DEBUG_THROTTLE(0.5, "agent robot dist = %f", dist);
 
       // _error[0] = penaltyBoundFromBelow(dist, min_dist_ , cfg_->optim.penalty_epsilon);
-      _error[0] = penaltyBoundFromBelowQuad(dist, min_dist_, cfg_->optim.penalty_epsilon);
+      _error[0] = penaltyBoundFromBelowQuad(dist, min_dist_, penalty_epsilon_);
 
-      ROS_ASSERT_MSG(std::isfinite(_error[0]), "EdgeAgentRobotSafety::computeError() _error[0]=%f\n", _error[0]);
+      assert(std::isfinite(_error[0]));
     }
 
     void setRobotModel(const BaseRobotFootprintModel *robot_model)
@@ -83,9 +85,8 @@ namespace hateb_local_planner
       agent_radius_ = agent_radius;
     }
 
-    void setParameters(const HATebConfig &cfg, const BaseRobotFootprintModel *robot_model, const double agent_radius, const double min_dist)
+    void setParameters(const BaseRobotFootprintModel *robot_model, const double agent_radius, const double min_dist)
     {
-      cfg_ = &cfg;
       robot_model_ = robot_model;
       agent_radius_ = agent_radius;
       min_dist_ = min_dist;
@@ -96,6 +97,7 @@ namespace hateb_local_planner
     Obstacle *obs_ = new PointObstacle();
     double agent_radius_ = std::numeric_limits<double>::infinity();
     double min_dist_ = 0.0;
+    double penalty_epsilon_ = 0.5;
 
   public:
     EIGEN_MAKE_ALIGNED_OPERATOR_NEW

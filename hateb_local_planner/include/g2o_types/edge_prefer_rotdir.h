@@ -43,9 +43,11 @@
 #ifndef EDGE_PREFER_ROTDIR_H_
 #define EDGE_PREFER_ROTDIR_H_
 
-#include <hateb_local_planner/g2o_types/vertex_pose.h>
-#include <hateb_local_planner/g2o_types/base_teb_edges.h>
-#include <hateb_local_planner/g2o_types/penalties.h>
+#include <cassert>
+
+#include <g2o_types/vertex_pose.h>
+#include <g2o_types/base_teb_edges.h>
+#include <g2o_types/penalties.h>
 #include "g2o/core/base_unary_edge.h"
 
 namespace hateb_local_planner
@@ -82,7 +84,7 @@ namespace hateb_local_planner
 
       _error[0] = penaltyBoundFromBelow(_measurement * g2o::normalize_theta(conf2->theta() - conf1->theta()), 0, 0);
 
-      ROS_ASSERT_MSG(std::isfinite(_error[0]), "EdgePreferRotDir::computeError() _error[0]=%f\n", _error[0]);
+      assert(std::isfinite(_error[0]));
     }
 
     /**
