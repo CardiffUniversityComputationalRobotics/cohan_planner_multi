@@ -15,7 +15,7 @@ geometry_msgs/Twist velocity
 # Corresponding acceleration
 geometry_msgs/Twist acceleration
 
-float64 time_from_start
+builtin_interfaces/Duration time_from_start
 
 
 
