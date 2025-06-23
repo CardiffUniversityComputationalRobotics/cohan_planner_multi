@@ -131,7 +131,7 @@ namespace hateb_local_planner
       costmap_ros_ = costmap_ros;
       costmap_ = costmap_ros_->getCostmap(); // locking should be done in MoveBase.
 
-      costmap_model_ = boost::make_shared<base_local_planner::CostmapModel>(*costmap_);
+      costmap_model_ = boost::make_shared<nav2_costmap_2d::Costmap2D>(*costmap_);
       global_frame_ = costmap_ros_->getGlobalFrameID();
       cfg_.map_frame = global_frame_; // TODO
       robot_base_frame_ = costmap_ros_->getBaseFrameID();
@@ -244,8 +244,8 @@ namespace hateb_local_planner
 
       agents_sub_ = nh.subscribe(AGENTS_SUB_TOPIC, 1, &HATebLocalPlannerROS::agentsCB, this);
 
-      // op_costs_pub_ = nh.advertise<hateb_local_planner::OptimizationCostArray>( OP_COSTS_TOPIC, 1);
-      // robot_pose_pub_ = nh.advertise<geometry_msgs::Pose>(ROB_POS_TOPIC, 1);
+      // op_costs_pub_ = nh.advertise<cohan_msgs::msg::OptimizationCostArray>( OP_COSTS_TOPIC, 1);
+      // robot_pose_pub_ = nh.advertise<geometry_msgs::msg::Pose>(ROB_POS_TOPIC, 1);
       agents_states_pub_ = nh.advertise<cohan_msgs::StateArray>("agents_states", 1);
       log_pub_ = nh.advertise<std_msgs::String>(HATEB_LOG, 1);
 
@@ -279,7 +279,7 @@ namespace hateb_local_planner
     }
   }
 
-  bool HATebLocalPlannerROS::setPlan(const std::vector<geometry_msgs::PoseStamped> &orig_global_plan)
+  bool HATebLocalPlannerROS::setPlan(const std::vector<geometry_msgs::msg::PoseStamped> &orig_global_plan)
   {
     // check if plugin is initialized
     if (!initialized_)
@@ -347,7 +347,7 @@ namespace hateb_local_planner
         std::vector<double> h_vels;
         agent_vels.push_back(h_vels);
         agent_nominal_vels.push_back(0.0);
-        geometry_msgs::Pose h_pose;
+        geometry_msgs::msg::Pose h_pose;
         agents_.push_back(h_pose);
       }
       for (auto &segment : agent.segments)
@@ -533,7 +533,7 @@ namespace hateb_local_planner
     {
       for (int i = 0; i < visible_agent_ids.size() && i < hum_xpos.size(); i++)
       {
-        geometry_msgs::Point v1, v2, v3, v4;
+        geometry_msgs::msg::Point v1, v2, v3, v4;
         auto idx = visible_agent_ids[i] - 1;
         auto agent_radius = agents_radii[idx];
         v1.x = hum_xpos[idx] - agent_radius, v1.y = hum_ypos[idx] - agent_radius, v1.z = 0.0;
@@ -541,7 +541,7 @@ namespace hateb_local_planner
         v3.x = hum_xpos[idx] + agent_radius, v3.y = hum_ypos[idx] + agent_radius, v3.z = 0.0;
         v4.x = hum_xpos[idx] + agent_radius, v4.y = hum_ypos[idx] - agent_radius, v4.z = 0.0;
 
-        std::vector<geometry_msgs::Point> agent_pos_costmap;
+        std::vector<geometry_msgs::msg::Point> agent_pos_costmap;
 
         if (cfg_.robot.is_real)
         {
@@ -568,20 +568,20 @@ namespace hateb_local_planner
     }
   }
 
-  bool HATebLocalPlannerROS::computeVelocityCommands(geometry_msgs::Twist &cmd_vel)
+  bool HATebLocalPlannerROS::computeVelocityCommands(geometry_msgs::msg::Twist &cmd_vel)
   {
 
     std::string dummy_message;
-    geometry_msgs::PoseStamped dummy_pose;
-    geometry_msgs::TwistStamped dummy_velocity, cmd_vel_stamped;
+    geometry_msgs::msg::PoseStamped dummy_pose;
+    geometry_msgs::msg::TwistStamped dummy_velocity, cmd_vel_stamped;
     uint32_t outcome = computeVelocityCommands(dummy_pose, dummy_velocity, cmd_vel_stamped, dummy_message);
     cmd_vel = cmd_vel_stamped.twist;
     return outcome == mbf_msgs::ExePathResult::SUCCESS;
   }
 
-  uint32_t HATebLocalPlannerROS::computeVelocityCommands(const geometry_msgs::PoseStamped &pose,
-                                                         const geometry_msgs::TwistStamped &velocity,
-                                                         geometry_msgs::TwistStamped &cmd_vel, std::string &message)
+  uint32_t HATebLocalPlannerROS::computeVelocityCommands(const geometry_msgs::msg::PoseStamped &pose,
+                                                         const geometry_msgs::msg::TwistStamped &velocity,
+                                                         geometry_msgs::msg::TwistStamped &cmd_vel, std::string &message)
   {
     auto start_time = ros::Time::now();
     if ((start_time - last_call_time_).toSec() >
@@ -618,7 +618,7 @@ namespace hateb_local_planner
 
     // Get robot pose
     auto pose_get_start_time = ros::Time::now();
-    geometry_msgs::PoseStamped robot_pose;
+    geometry_msgs::msg::PoseStamped robot_pose;
     costmap_ros_->getRobotPose(robot_pose);
     robot_pose_ = PoseSE2(robot_pose.pose);
     robot_pose_.toPoseMsg(robot_pos_msg);
@@ -672,7 +672,7 @@ namespace hateb_local_planner
 
     // Get robot velocity
     auto vel_get_start_time = ros::Time::now();
-    geometry_msgs::PoseStamped robot_vel_tf;
+    geometry_msgs::msg::PoseStamped robot_vel_tf;
     odom_helper_.getRobotVel(robot_vel_tf);
     robot_vel_.linear.x = robot_vel_tf.pose.position.x;
     robot_vel_.linear.y = robot_vel_tf.pose.position.y;
@@ -712,7 +712,7 @@ namespace hateb_local_planner
 
     auto other_start_time = ros::Time::now();
     // check if global goal is reached
-    geometry_msgs::PoseStamped global_goal;
+    geometry_msgs::msg::PoseStamped global_goal;
     tf2::doTransform(global_plan_.back(), global_goal, tf_plan_to_global);
     double dx = global_goal.pose.position.x - robot_pose_.x();
     double dy = global_goal.pose.position.y - robot_pose_.y();
@@ -757,7 +757,7 @@ namespace hateb_local_planner
     // overwrite/update start of the transformed plan with the actual robot position (allows using the plan as initial trajectory)
     if (transformed_plan.size() == 1) // plan only contains the goal
     {
-      transformed_plan.insert(transformed_plan.begin(), geometry_msgs::PoseStamped()); // insert start (not yet initialized)
+      transformed_plan.insert(transformed_plan.begin(), geometry_msgs::msg::PoseStamped()); // insert start (not yet initialized)
     }
     transformed_plan.front() = robot_pose; // update start
 
@@ -935,8 +935,8 @@ namespace hateb_local_planner
 
         for (int indx = 0; indx < static_agents_ids.size(); indx++)
         {
-          geometry_msgs::Twist empty_vel;
-          geometry_msgs::PoseStamped current_hpose;
+          geometry_msgs::msg::Twist empty_vel;
+          geometry_msgs::msg::PoseStamped current_hpose;
           current_hpose.header.frame_id = "static";
           current_hpose.pose = agents_[static_agents_ids[indx] - 1];
 
@@ -1029,7 +1029,7 @@ namespace hateb_local_planner
         {
           if (predicted_agents_poses.id == cfg_.approach.approach_id)
           {
-            geometry_msgs::PoseStamped transformed_agent_pose;
+            geometry_msgs::msg::PoseStamped transformed_agent_pose;
             if (!transformAgentPose(*tf_, global_frame_,
                                     predicted_agents_poses.poses.front(),
                                     transformed_agent_pose))
@@ -1049,7 +1049,7 @@ namespace hateb_local_planner
             // update global plan of the robot
             // find position in front of the agent
             tf2::Transform tf_agent_pose, tf_approach_pose[3];
-            geometry_msgs::PoseStamped approach_pose[3];
+            geometry_msgs::msg::PoseStamped approach_pose[3];
             for (int i = 0; i < 3; i++)
             {
               tf2::fromMsg(transformed_agent_pose.pose, tf_agent_pose);
@@ -1076,7 +1076,7 @@ namespace hateb_local_planner
                 tf2::impl::getYaw(approach_goal.getRotation())));
             // ROS_INFO("lin_dist=%.2f, ang_dist=%.2f", lin_dist, ang_dist);
             tf2::Transform tf_approach_global[3];
-            geometry_msgs::PoseStamped approach_pose_global[3];
+            geometry_msgs::msg::PoseStamped approach_pose_global[3];
             if (lin_dist > cfg_.approach.approach_dist_tolerance ||
                 ang_dist > cfg_.approach.approach_angle_tolerance)
             {
@@ -1174,7 +1174,7 @@ namespace hateb_local_planner
     auto via_start_time = ros::Time::now();
     // overwrite/update start of the transformed plan with the actual robot
     // position (allows using the plan as initial trajectory)
-    // tf::poseTFToMsg(robot_pose, transformed_plan.front().pose);
+    // geometry_msgs::msg::PoseTFToMsg(robot_pose, transformed_plan.front().pose);
     transformed_plan.front() = robot_pose;
     if (!custom_via_points_active_)
       updateViaPointsContainer(transformed_plan, cfg_.trajectory.global_plan_viapoint_sep);
@@ -1183,7 +1183,7 @@ namespace hateb_local_planner
     // Now perform the actual
     auto plan_start_time = ros::Time::now();
     // bool success = planner_->plan(robot_pose_, robot_goal_, robot_vel_, cfg_.goal_tolerance.free_goal_vel); // straight line init
-    hateb_local_planner::OptimizationCostArray op_costs;
+    cohan_msgs::msg::OptimizationCostArray op_costs;
 
     double dt_resize = cfg_.trajectory.dt_ref;
     double dt_hyst_resize = cfg_.trajectory.dt_hysteresis;
@@ -1669,7 +1669,7 @@ namespace hateb_local_planner
     }
   }
 
-  void HATebLocalPlannerROS::updateViaPointsContainer(const std::vector<geometry_msgs::PoseStamped> &transformed_plan, double min_separation)
+  void HATebLocalPlannerROS::updateViaPointsContainer(const std::vector<geometry_msgs::msg::PoseStamped> &transformed_plan, double min_separation)
   {
     via_points_.clear();
 
@@ -1689,7 +1689,7 @@ namespace hateb_local_planner
     }
   }
 
-  Eigen::Vector2d HATebLocalPlannerROS::tfPoseToEigenVector2dTransRot(const tf::Pose &tf_vel)
+  Eigen::Vector2d HATebLocalPlannerROS::tfPoseToEigenVector2dTransRot(const geometry_msgs::msg::Pose &tf_vel)
   {
     Eigen::Vector2d vel;
     vel.coeffRef(0) = std::sqrt(tf_vel.getOrigin().getX() * tf_vel.getOrigin().getX() + tf_vel.getOrigin().getY() * tf_vel.getOrigin().getY());
@@ -1756,7 +1756,7 @@ namespace hateb_local_planner
     }
   }
 
-  bool HATebLocalPlannerROS::pruneGlobalPlan(const tf2_ros::Buffer &tf, const geometry_msgs::PoseStamped &global_pose, std::vector<geometry_msgs::PoseStamped> &global_plan, double dist_behind_robot)
+  bool HATebLocalPlannerROS::pruneGlobalPlan(const tf2_ros::Buffer &tf, const geometry_msgs::msg::PoseStamped &global_pose, std::vector<geometry_msgs::msg::PoseStamped> &global_plan, double dist_behind_robot)
   {
     if (global_plan.empty())
       return true;
@@ -1765,14 +1765,14 @@ namespace hateb_local_planner
     {
       // transform robot pose into the plan frame (we do not wait here, since pruning not crucial, if missed a few times)
       geometry_msgs::TransformStamped global_to_plan_transform = tf.lookupTransform(global_plan.front().header.frame_id, global_pose.header.frame_id, ros::Time(0));
-      geometry_msgs::PoseStamped robot;
+      geometry_msgs::msg::PoseStamped robot;
       tf2::doTransform(global_pose, robot, global_to_plan_transform);
 
       double dist_thresh_sq = dist_behind_robot * dist_behind_robot;
 
       // iterate plan until a pose close the robot is found
-      std::vector<geometry_msgs::PoseStamped>::iterator it = global_plan.begin();
-      std::vector<geometry_msgs::PoseStamped>::iterator erase_end = it;
+      std::vector<geometry_msgs::msg::PoseStamped>::iterator it = global_plan.begin();
+      std::vector<geometry_msgs::msg::PoseStamped>::iterator erase_end = it;
       while (it != global_plan.end())
       {
         double dx = robot.pose.position.x - it->pose.position.x;
@@ -1799,14 +1799,14 @@ namespace hateb_local_planner
     return true;
   }
 
-  bool HATebLocalPlannerROS::transformGlobalPlan(const tf2_ros::Buffer &tf, const std::vector<geometry_msgs::PoseStamped> &global_plan,
-                                                 const geometry_msgs::PoseStamped &global_pose, const costmap_2d::Costmap2D &costmap, const std::string &global_frame, double max_plan_length,
+  bool HATebLocalPlannerROS::transformGlobalPlan(const tf2_ros::Buffer &tf, const std::vector<geometry_msgs::msg::PoseStamped> &global_plan,
+                                                 const geometry_msgs::msg::PoseStamped &global_pose, const costmap_2d::Costmap2D &costmap, const std::string &global_frame, double max_plan_length,
                                                  PlanCombined &transformed_plan_combined, int *current_goal_idx, geometry_msgs::TransformStamped *tf_plan_to_global) const
 
   {
     // this method is a slightly modified version of base_local_planner/goal_functions.h
 
-    const geometry_msgs::PoseStamped &plan_pose = global_plan[0];
+    const geometry_msgs::msg::PoseStamped &plan_pose = global_plan[0];
 
     transformed_plan_combined.plan_to_optimize.clear();
 
@@ -1824,7 +1824,7 @@ namespace hateb_local_planner
                                                                                     plan_pose.header.frame_id, ros::Duration(0.5));
 
       // let's get the pose of the robot in the frame of the plan
-      geometry_msgs::PoseStamped robot_pose;
+      geometry_msgs::msg::PoseStamped robot_pose;
       tf.transform(global_pose, robot_pose, plan_pose.header.frame_id, ros::Duration(0.05));
 
       // we'll discard points on the plan that are outside the local costmap
@@ -1840,7 +1840,7 @@ namespace hateb_local_planner
       double sq_dist = 1e10;
 
       tf2::Stamped<tf2::Transform> tf_pose;
-      geometry_msgs::PoseStamped newer_pose;
+      geometry_msgs::msg::PoseStamped newer_pose;
       // we need to loop to a point on the plan that is within a certain distance of the robot
       for (int j = 0; j < (int)global_plan.size(); ++j)
       {
@@ -1856,7 +1856,7 @@ namespace hateb_local_planner
           i = j;
         }
 
-        const geometry_msgs::PoseStamped &pose = global_plan[i];
+        const geometry_msgs::msg::PoseStamped &pose = global_plan[i];
         tf2::doTransform(pose, newer_pose, plan_to_global_transform);
 
         transformed_plan_combined.plan_before.push_back(newer_pose);
@@ -1866,7 +1866,7 @@ namespace hateb_local_planner
       // now we'll transform until points are outside of our distance threshold
       while (i < (int)global_plan.size() && sq_dist <= sq_dist_threshold && (max_plan_length <= 0 || plan_length <= max_plan_length))
       {
-        const geometry_msgs::PoseStamped &pose = global_plan[i];
+        const geometry_msgs::msg::PoseStamped &pose = global_plan[i];
         tf2::doTransform(pose, newer_pose, plan_to_global_transform);
 
         transformed_plan_combined.plan_to_optimize.push_back(newer_pose);
@@ -1889,7 +1889,7 @@ namespace hateb_local_planner
 
       while (i < global_plan.size())
       {
-        const geometry_msgs::PoseStamped &pose = global_plan[i];
+        const geometry_msgs::msg::PoseStamped &pose = global_plan[i];
         tf2::doTransform(pose, newer_pose, plan_to_global_transform);
         transformed_plan_combined.plan_after.push_back(newer_pose);
         ++i;
@@ -1950,7 +1950,7 @@ namespace hateb_local_planner
 
   void HATebLocalPlannerROS::lookupTwist(const std::string &tracking_frame, const std::string &observation_frame,
                                          const ros::Time &time, const ros::Duration &averaging_interval,
-                                         geometry_msgs::Twist &twist) const
+                                         geometry_msgs::msg::Twist &twist) const
   {
     // ref point is origin of tracking_frame, ref_frame = obs_frame
     lookupTwist(tracking_frame, observation_frame, observation_frame, tf2::Vector3(0, 0, 0), tracking_frame, time, averaging_interval, twist);
@@ -1959,7 +1959,7 @@ namespace hateb_local_planner
   void HATebLocalPlannerROS::lookupTwist(const std::string &tracking_frame, const std::string &observation_frame, const std::string &reference_frame,
                                          const tf2::Vector3 &reference_point, const std::string &reference_point_frame,
                                          const ros::Time &time, const ros::Duration &averaging_interval,
-                                         geometry_msgs::Twist &twist) const
+                                         geometry_msgs::msg::Twist &twist) const
   {
 
     ros::Time latest_time, target_time;
@@ -2011,13 +2011,13 @@ namespace hateb_local_planner
     geometry_msgs::TransformStamped reference_frame_trans;
     tf2::fromMsg(tf_->lookupTransform(reference_frame, rp_orig.frame_id_, rp_orig.stamp_), reference_frame_trans);
 
-    geometry_msgs::PointStamped rp_orig_msg;
+    geometry_msgs::msg::PointStamped rp_orig_msg;
     tf2::toMsg(rp_orig, rp_orig_msg);
     tf2::doTransform(rp_orig_msg, rp_orig_msg, reference_frame_trans);
 
     // convert the requrested reference point into the right frame
     tf2::Stamped<tf2::Vector3> rp_desired(reference_point, target_time, reference_point_frame);
-    geometry_msgs::PointStamped rp_desired_msg;
+    geometry_msgs::msg::PointStamped rp_desired_msg;
     tf2::toMsg(rp_desired, rp_desired_msg);
     tf2::doTransform(rp_desired_msg, rp_desired_msg, reference_frame_trans);
     // compute the delta
@@ -2041,11 +2041,11 @@ namespace hateb_local_planner
   };
 
   bool HATebLocalPlannerROS::transformAgentPlan(
-      const tf2_ros::Buffer &tf2, const geometry_msgs::PoseStamped &robot_pose,
+      const tf2_ros::Buffer &tf2, const geometry_msgs::msg::PoseStamped &robot_pose,
       const costmap_2d::Costmap2D &costmap, const std::string &global_frame,
-      const std::vector<geometry_msgs::PoseWithCovarianceStamped> &agent_plan,
+      const std::vector<geometry_msgs::msg::PoseWithCovarianceStamped> &agent_plan,
       AgentPlanCombined &transformed_agent_plan_combined,
-      geometry_msgs::TwistStamped &transformed_agent_twist,
+      geometry_msgs::msg::TwistStamped &transformed_agent_twist,
       tf2::Stamped<tf2::Transform> *tf_agent_plan_to_global) const
   {
     try
@@ -2066,9 +2066,9 @@ namespace hateb_local_planner
       tf2::fromMsg(agent_plan_to_global_transform, agent_plan_to_global_transform_);
 
       // transform the full plan to local planning frame
-      std::vector<geometry_msgs::PoseStamped> transformed_agent_plan;
+      std::vector<geometry_msgs::msg::PoseStamped> transformed_agent_plan;
       tf2::Stamped<tf2::Transform> tf_pose_stamped;
-      geometry_msgs::PoseStamped transformed_pose;
+      geometry_msgs::msg::PoseStamped transformed_pose;
       tf2::Transform tf_pose;
       auto agent_start_pose = agent_plan[0];
       for (auto &agent_pose : agent_plan)
@@ -2096,7 +2096,7 @@ namespace hateb_local_planner
       }
 
       // transform agent twist to local planning frame
-      geometry_msgs::Twist agent_to_global_twist;
+      geometry_msgs::msg::Twist agent_to_global_twist;
       lookupTwist(global_frame, transformed_agent_twist.header.frame_id,
                   ros::Time(0), ros::Duration(0.5), agent_to_global_twist);
       transformed_agent_twist.twist.linear.x -= agent_to_global_twist.linear.x;
@@ -2199,8 +2199,8 @@ namespace hateb_local_planner
 
   bool HATebLocalPlannerROS::transformAgentPose(
       const tf2_ros::Buffer &tf2, const std::string &global_frame,
-      geometry_msgs::PoseWithCovarianceStamped &agent_pose,
-      geometry_msgs::PoseStamped &transformed_agent_pose) const
+      geometry_msgs::msg::PoseWithCovarianceStamped &agent_pose,
+      geometry_msgs::msg::PoseStamped &transformed_agent_pose) const
   {
     try
     {
@@ -2241,7 +2241,7 @@ namespace hateb_local_planner
     return true;
   }
 
-  double HATebLocalPlannerROS::estimateLocalGoalOrientation(const std::vector<geometry_msgs::PoseStamped> &global_plan, const geometry_msgs::PoseStamped &local_goal,
+  double HATebLocalPlannerROS::estimateLocalGoalOrientation(const std::vector<geometry_msgs::msg::PoseStamped> &global_plan, const geometry_msgs::msg::PoseStamped &local_goal,
                                                             int current_goal_idx, const geometry_msgs::TransformStamped &tf_plan_to_global, int moving_average_length) const
   {
     int n = (int)global_plan.size();
@@ -2268,8 +2268,8 @@ namespace hateb_local_planner
     moving_average_length = std::min(moving_average_length, n - current_goal_idx - 1); // maybe redundant, since we have checked the vicinity of the goal before
 
     std::vector<double> candidates;
-    geometry_msgs::PoseStamped tf_pose_k = local_goal;
-    geometry_msgs::PoseStamped tf_pose_kp1;
+    geometry_msgs::msg::PoseStamped tf_pose_k = local_goal;
+    geometry_msgs::msg::PoseStamped tf_pose_kp1;
 
     int range_end = current_goal_idx + moving_average_length;
     for (int i = current_goal_idx; i < range_end; ++i)
@@ -2355,7 +2355,7 @@ namespace hateb_local_planner
                   opt_inscribed_radius, min_obst_dist, costmap_inscribed_radius);
   }
 
-  void HATebLocalPlannerROS::configureBackupModes(std::vector<geometry_msgs::PoseStamped> &transformed_plan, int &goal_idx)
+  void HATebLocalPlannerROS::configureBackupModes(std::vector<geometry_msgs::msg::PoseStamped> &transformed_plan, int &goal_idx)
   {
     ros::Time current_time = ros::Time::now();
 
@@ -2451,7 +2451,7 @@ namespace hateb_local_planner
 
     boost::mutex::scoped_lock l(via_point_mutex_);
     via_points_.clear();
-    for (const geometry_msgs::PoseStamped &pose : via_points_msg->poses)
+    for (const geometry_msgs::msg::PoseStamped &pose : via_points_msg->poses)
     {
       via_points_.emplace_back(pose.pose.position.x, pose.pose.position.y);
     }
@@ -2661,7 +2661,7 @@ namespace hateb_local_planner
 
     auto trfm_start_time = ros::Time::now();
     // get robot pose from the costmap
-    geometry_msgs::PoseStamped robot_pose_tf;
+    geometry_msgs::msg::PoseStamped robot_pose_tf;
     costmap_ros_->getRobotPose(robot_pose_tf);
 
     // transform global plan to the frame of local costmap
@@ -2721,12 +2721,12 @@ namespace hateb_local_planner
     for (auto agent_path : req.agent_path_array.paths)
     {
       AgentPlanCombined agent_plan_combined;
-      geometry_msgs::TwistStamped transformed_vel;
+      geometry_msgs::msg::TwistStamped transformed_vel;
       transformed_vel.header.frame_id = global_frame_;
-      std::vector<geometry_msgs::PoseWithCovarianceStamped> agent_path_cov;
+      std::vector<geometry_msgs::msg::PoseWithCovarianceStamped> agent_path_cov;
       for (auto agent_pose : agent_path.path.poses)
       {
-        geometry_msgs::PoseWithCovarianceStamped agent_pos_cov;
+        geometry_msgs::msg::PoseWithCovarianceStamped agent_pos_cov;
         agent_pos_cov.header = agent_pose.header;
         agent_pos_cov.pose.pose = agent_pose.pose;
         agent_path_cov.push_back(agent_pos_cov);
@@ -2775,13 +2775,13 @@ namespace hateb_local_planner
 
     // now perform the actual planning
     auto plan_start_time = ros::Time::now();
-    geometry_msgs::Twist robot_vel_twist;
-    geometry_msgs::PoseStamped robot_vel_tf;
+    geometry_msgs::msg::Twist robot_vel_twist;
+    geometry_msgs::msg::PoseStamped robot_vel_tf;
     odom_helper_.getRobotVel(robot_vel_tf);
     robot_vel_.linear.x = robot_vel_tf.pose.position.x;
     robot_vel_.linear.y = robot_vel_tf.pose.position.y;
     robot_vel_.angular.z = tf2::getYaw(robot_vel_tf.pose.orientation);
-    hateb_local_planner::OptimizationCostArray op_costs;
+    cohan_msgs::msg::OptimizationCostArray op_costs;
 
     double dt_resize = cfg_.trajectory.dt_ref;
     double dt_hyst_resize = cfg_.trajectory.dt_hysteresis;
@@ -2832,7 +2832,7 @@ namespace hateb_local_planner
 
     res.success = true;
     res.message = "planning successful";
-    geometry_msgs::Twist cmd_vel;
+    geometry_msgs::msg::Twist cmd_vel;
 
     // check feasibility of robot plan
     auto fsb_start_time = ros::Time::now();

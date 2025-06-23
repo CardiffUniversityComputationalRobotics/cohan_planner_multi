@@ -771,7 +771,7 @@ namespace hateb_local_planner
     mode_text_pub->publish(mode_text);
   }
 
-  void TebVisualization::publishTrackedAgents(const cohan_msgs::msg::TrackedAgents::SharedPtr &agents)
+  void TebVisualization::publishTrackedAgents(const cohan_msgs::msg::TrackedAgents::SharedPtr agents)
   {
     visualization_msgs::msg::MarkerArray marker_arr, arrow_arr;
 

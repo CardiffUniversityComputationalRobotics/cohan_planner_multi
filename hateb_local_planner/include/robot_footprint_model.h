@@ -40,9 +40,9 @@
 #ifndef ROBOT_FOOTPRINT_MODEL_H
 #define ROBOT_FOOTPRINT_MODEL_H
 
-#include <hateb_local_planner/pose_se2.h>
-#include <hateb_local_planner/obstacles.h>
-#include <visualization_msgs/Marker.h>
+#include <pose_se2.h>
+#include <obstacles.h>
+#include <visualization_msgs/msg/marker.hpp>
 
 namespace hateb_local_planner
 {
@@ -98,7 +98,7 @@ namespace hateb_local_planner
      * @param[out] markers container of marker messages describing the robot shape
      * @param color Color of the footprint
      */
-    virtual void visualizeRobot(const PoseSE2 &current_pose, std::vector<visualization_msgs::Marker> &markers, const std_msgs::ColorRGBA &color) const {}
+    virtual void visualizeRobot(const PoseSE2 &current_pose, std::vector<visualization_msgs::msg::Marker> &markers, const std_msgs::msg::ColorRGBA &color) const {}
 
     /**
      * @brief Compute the inscribed radius of the footprint model
@@ -230,11 +230,11 @@ namespace hateb_local_planner
      * @param[out] markers container of marker messages describing the robot shape
      * @param color Color of the footprint
      */
-    virtual void visualizeRobot(const PoseSE2 &current_pose, std::vector<visualization_msgs::Marker> &markers, const std_msgs::ColorRGBA &color) const
+    virtual void visualizeRobot(const PoseSE2 &current_pose, std::vector<visualization_msgs::msg::Marker> &markers, const std_msgs::msg::ColorRGBA &color) const
     {
       markers.resize(1);
-      visualization_msgs::Marker &marker = markers.back();
-      marker.type = visualization_msgs::Marker::CYLINDER;
+      visualization_msgs::msg::Marker &marker = markers.back();
+      marker.type = visualization_msgs::msg::Marker::CYLINDER;
       current_pose.toPoseMsg(marker.pose);
       marker.scale.x = marker.scale.y = 2 * radius_; // scale = diameter
       marker.scale.z = 0.05;
@@ -332,14 +332,14 @@ namespace hateb_local_planner
      * @param[out] markers container of marker messages describing the robot shape
      * @param color Color of the footprint
      */
-    virtual void visualizeRobot(const PoseSE2 &current_pose, std::vector<visualization_msgs::Marker> &markers, const std_msgs::ColorRGBA &color) const
+    virtual void visualizeRobot(const PoseSE2 &current_pose, std::vector<visualization_msgs::msg::Marker> &markers, const std_msgs::msg::ColorRGBA &color) const
     {
       Eigen::Vector2d dir = current_pose.orientationUnitVec();
       if (front_radius_ > 0)
       {
-        markers.push_back(visualization_msgs::Marker());
-        visualization_msgs::Marker &marker1 = markers.front();
-        marker1.type = visualization_msgs::Marker::CYLINDER;
+        markers.push_back(visualization_msgs::msg::Marker());
+        visualization_msgs::msg::Marker &marker1 = markers.front();
+        marker1.type = visualization_msgs::msg::Marker::CYLINDER;
         current_pose.toPoseMsg(marker1.pose);
         marker1.pose.position.x += front_offset_ * dir.x();
         marker1.pose.position.y += front_offset_ * dir.y();
@@ -349,9 +349,9 @@ namespace hateb_local_planner
       }
       if (rear_radius_ > 0)
       {
-        markers.push_back(visualization_msgs::Marker());
-        visualization_msgs::Marker &marker2 = markers.back();
-        marker2.type = visualization_msgs::Marker::CYLINDER;
+        markers.push_back(visualization_msgs::msg::Marker());
+        visualization_msgs::msg::Marker &marker2 = markers.back();
+        marker2.type = visualization_msgs::msg::Marker::CYLINDER;
         current_pose.toPoseMsg(marker2.pose);
         marker2.pose.position.x -= rear_offset_ * dir.x();
         marker2.pose.position.y -= rear_offset_ * dir.y();
@@ -396,7 +396,7 @@ namespace hateb_local_planner
      * @param line_start start coordinates (only x and y) of the line (w.r.t. robot center at (0,0))
      * @param line_end end coordinates (only x and y) of the line (w.r.t. robot center at (0,0))
      */
-    LineRobotFootprint(const geometry_msgs::Point &line_start, const geometry_msgs::Point &line_end)
+    LineRobotFootprint(const geometry_msgs::msg::Point &line_start, const geometry_msgs::msg::Point &line_end)
     {
       setLine(line_start, line_end);
     }
@@ -420,7 +420,7 @@ namespace hateb_local_planner
      * @brief Set vertices of the contour/footprint
      * @param vertices footprint vertices (only x and y) around the robot center (0,0) (do not repeat the first and last vertex at the end)
      */
-    void setLine(const geometry_msgs::Point &line_start, const geometry_msgs::Point &line_end)
+    void setLine(const geometry_msgs::msg::Point &line_start, const geometry_msgs::msg::Point &line_end)
     {
       line_start_.x() = line_start.x;
       line_start_.y() = line_start.y;
@@ -476,21 +476,21 @@ namespace hateb_local_planner
      * @param[out] markers container of marker messages describing the robot shape
      * @param color Color of the footprint
      */
-    virtual void visualizeRobot(const PoseSE2 &current_pose, std::vector<visualization_msgs::Marker> &markers, const std_msgs::ColorRGBA &color) const
+    virtual void visualizeRobot(const PoseSE2 &current_pose, std::vector<visualization_msgs::msg::Marker> &markers, const std_msgs::msg::ColorRGBA &color) const
     {
-      markers.push_back(visualization_msgs::Marker());
-      visualization_msgs::Marker &marker = markers.front();
-      marker.type = visualization_msgs::Marker::LINE_STRIP;
+      markers.push_back(visualization_msgs::msg::Marker());
+      visualization_msgs::msg::Marker &marker = markers.front();
+      marker.type = visualization_msgs::msg::Marker::LINE_STRIP;
       current_pose.toPoseMsg(marker.pose); // all points are transformed into the robot frame!
 
       // line
-      geometry_msgs::Point line_start_world;
+      geometry_msgs::msg::Point line_start_world;
       line_start_world.x = line_start_.x();
       line_start_world.y = line_start_.y();
       line_start_world.z = 0;
       marker.points.push_back(line_start_world);
 
-      geometry_msgs::Point line_end_world;
+      geometry_msgs::msg::Point line_end_world;
       line_end_world.x = line_end_.x();
       line_end_world.y = line_end_.y();
       line_end_world.z = 0;
@@ -599,26 +599,26 @@ namespace hateb_local_planner
      * @param[out] markers container of marker messages describing the robot shape
      * @param color Color of the footprint
      */
-    virtual void visualizeRobot(const PoseSE2 &current_pose, std::vector<visualization_msgs::Marker> &markers, const std_msgs::ColorRGBA &color) const
+    virtual void visualizeRobot(const PoseSE2 &current_pose, std::vector<visualization_msgs::msg::Marker> &markers, const std_msgs::msg::ColorRGBA &color) const
     {
       if (vertices_.empty())
         return;
 
-      markers.push_back(visualization_msgs::Marker());
-      visualization_msgs::Marker &marker = markers.front();
-      marker.type = visualization_msgs::Marker::LINE_STRIP;
+      markers.push_back(visualization_msgs::msg::Marker());
+      visualization_msgs::msg::Marker &marker = markers.front();
+      marker.type = visualization_msgs::msg::Marker::LINE_STRIP;
       current_pose.toPoseMsg(marker.pose); // all points are transformed into the robot frame!
 
       for (std::size_t i = 0; i < vertices_.size(); ++i)
       {
-        geometry_msgs::Point point;
+        geometry_msgs::msg::Point point;
         point.x = vertices_[i].x();
         point.y = vertices_[i].y();
         point.z = 0;
         marker.points.push_back(point);
       }
       // add first point again in order to close the polygon
-      geometry_msgs::Point point;
+      geometry_msgs::msg::Point point;
       point.x = vertices_.front().x();
       point.y = vertices_.front().y();
       point.z = 0;

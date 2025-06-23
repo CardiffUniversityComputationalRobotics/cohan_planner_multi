@@ -43,9 +43,14 @@
 #include <g2o/stuff/misc.h>
 
 #include <Eigen/Core>
-#include <hateb_local_planner/misc.h>
-#include <geometry_msgs/Pose.h>
-#include <tf/transform_datatypes.h>
+#include <misc.h>
+#include <geometry_msgs/msg/pose.hpp>
+#include <tf2_ros/transform_listener.h>
+#include <tf2_ros/buffer.h>
+#include <tf2_ros/message_filter.h>
+#include <tf2_geometry_msgs/tf2_geometry_msgs.hpp>
+#include "tf2/LinearMath/Quaternion.h"
+#include "tf2/utils.h"
 
 namespace hateb_local_planner
 {
@@ -94,25 +99,14 @@ namespace hateb_local_planner
     }
 
     /**
-     * @brief Construct pose using a geometry_msgs::Pose
-     * @param pose geometry_msgs::Pose object
+     * @brief Construct pose using a geometry_msgs::msg::Pose
+     * @param pose geometry_msgs::msg::Pose object
      */
-    PoseSE2(const geometry_msgs::Pose &pose)
+    PoseSE2(const geometry_msgs::msg::Pose &pose)
     {
       _position.coeffRef(0) = pose.position.x;
       _position.coeffRef(1) = pose.position.y;
-      _theta = tf::getYaw(pose.orientation);
-    }
-
-    /**
-     * @brief Construct pose using a tf::Pose
-     * @param pose tf::Pose object
-     */
-    PoseSE2(const tf::Pose &pose)
-    {
-      _position.coeffRef(0) = pose.getOrigin().getX();
-      _position.coeffRef(1) = pose.getOrigin().getY();
-      _theta = tf::getYaw(pose.getRotation());
+      _theta = tf2::getYaw(pose.orientation);
     }
 
     /**
@@ -195,15 +189,17 @@ namespace hateb_local_planner
     }
 
     /**
-     * @brief Convert PoseSE2 to a geometry_msgs::Pose
+     * @brief Convert PoseSE2 to a geometry_msgs::msg::Pose
      * @param[out] pose Pose message
      */
-    void toPoseMsg(geometry_msgs::Pose &pose) const
+    void toPoseMsg(geometry_msgs::msg::Pose &pose) const
     {
       pose.position.x = _position.x();
       pose.position.y = _position.y();
       pose.position.z = 0;
-      pose.orientation = tf::createQuaternionMsgFromYaw(_theta);
+      tf2::Quaternion tf_q;
+      tf_q.setRPY(0, 0, _theta); // Roll, Pitch, Yaw
+      pose.orientation = tf2::toMsg(tf_q);
     }
 
     /**

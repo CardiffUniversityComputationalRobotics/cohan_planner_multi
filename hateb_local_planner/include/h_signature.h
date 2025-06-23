@@ -40,11 +40,11 @@
 #ifndef H_SIGNATURE_H_
 #define H_SIGNATURE_H_
 
-#include <hateb_local_planner/equivalence_relations.h>
-#include <hateb_local_planner/misc.h>
-#include <hateb_local_planner/obstacles.h>
-#include <hateb_local_planner/hateb_config.h>
-#include <hateb_local_planner/timed_elastic_band.h>
+#include <equivalence_relations.h>
+#include <misc.h>
+#include <obstacles.h>
+// #include <hateb_config.h>
+#include <timed_elastic_band.h>
 
 #include <ros/ros.h>
 #include <math.h>
