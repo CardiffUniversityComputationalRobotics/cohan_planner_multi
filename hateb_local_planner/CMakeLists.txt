@@ -81,7 +81,7 @@ set(dependencies
 set(EXTERNAL_LIBS ${G2O_LIBRARIES} ${Boost_LIBRARIES})
 
 add_executable(hateb_local_planner_node
-  # src/hateb_local_planner_ros.cpp
+  src/hateb_local_planner.cpp
   src/timed_elastic_band.cpp
   src/optimal_planner.cpp
   src/obstacles.cpp
