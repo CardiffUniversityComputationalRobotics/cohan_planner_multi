@@ -74,6 +74,7 @@ set(dependencies
   cohan_msgs
   # agent_path_prediction
   costmap_converter
+  pedsim_msgs
 )
 
 # External libraries

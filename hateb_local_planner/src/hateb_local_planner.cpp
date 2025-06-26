@@ -35,6 +35,19 @@
 
 #include <nav_msgs/msg/path.hpp>
 
+#include <cohan_msgs/msg/state_array.hpp>
+
+#include <visualization.h>
+
+enum AgentState
+{
+    NO_STATE,
+    STATIC,
+    MOVING,
+    STOPPED,
+    BLOCKED
+};
+
 class HATEBPlanningFramework : public rclcpp::Node
 {
 public:
@@ -50,7 +63,8 @@ public:
     void queryGoalCallback(const geometry_msgs::msg::PoseStamped::SharedPtr nav_goal_msg);
     //! Callback for getting the state of the Smf base controller
     void controlActiveCallback(const std_msgs::msg::Bool::SharedPtr control_active_msg);
-    uint32_t computeVelocityCommands(const geometry_msgs::msg::PoseStamped &pose, const geometry_msgs::msg::TwistStamped &velocity, geometry_msgs::msg::TwistStamped &cmd_vel, std::string &message);
+    bool HATebLocalPlannerROS::pruneGlobalPlan(const tf2_ros::Buffer &tf, const geometry_msgs::msg::PoseStamped &global_pose, std::vector<geometry_msgs::msg::PoseStamped> &global_plan, double dist_behind_robot);
+    uint32_t computeVelocityCommands(const geometry_msgs::msg::PoseStamped &pose, const geometry_msgs::msg::TwistStamped &velocity, geometry_msgs::msg::TwistStamped &cmd_vel);
 
 private:
     // ! SUBSCRIBERS
@@ -74,13 +88,29 @@ private:
     bool odom_available_, goal_available_, control_active_;
     std::vector<double> start_state_, goal_map_frame_, goal_odom_frame_;
     double goal_radius_, xy_goal_tolerance_, yaw_goal_tolerance_, local_goal_radius_, local_path_range_, global_time_percent_, max_trans_vel_, max_rot_vel_;
-    std::string odometry_topic_, query_goal_topic_, solution_path_topic_, world_frame_, control_active_topic_;
+    std::string odometry_topic_, query_goal_topic_, solution_path_topic_, world_frame_, control_active_topic_, robot_base_frame_;
 
     nav_msgs::msg::Odometry::SharedPtr odom_data_;
     geometry_msgs::msg::Twist current_robot_velocity_;
 
     // configs params
-    rclcpp::Time last_call_time_;
+    double pose_prediction_reset_time_ = 0.1;
+    bool initialized_, reset_states_, goal_reached_;
+    cohan_msgs::msg::StateArray agents_states_; // State of agents
+
+    rclcpp::Time last_position_time_;
+
+    int robot_type_ = 0;
+    int is_mode_, change_mode_, stuck_agent_id_;
+
+    bool enable_backoff_ = false;
+    std::vector<bool> agent_still_;
+    std::vector<int> visible_agent_ids_; // List of visible agents
+    bool is_dist_under_threshold_, stuck_;
+
+    double global_plan_prune_distance_ = 4.0;
+
+    nav2_costmap_2d::Costmap2D costmap_model_;
 };
 
 //!  Constructor.
@@ -339,173 +369,97 @@ void HATEBPlanningFramework::planningTimerCallback()
 
 uint32_t HATEBPlanningFramework::computeVelocityCommands(const geometry_msgs::msg::PoseStamped &pose,
                                                          const geometry_msgs::msg::TwistStamped &velocity,
-                                                         geometry_msgs::msg::TwistStamped &cmd_vel, std::string &message)
+                                                         geometry_msgs::msg::TwistStamped &cmd_vel)
 {
-    auto start_time = this->get_clock()->now();
-    if ((start_time - last_call_time_).toSec() >
-        cfg_.hateb.pose_prediction_reset_time)
-    {
-        resetAgentsPrediction();
-    }
-    last_call_time_ = start_time;
 
-    // check if plugin initialized
-    logs.clear();
     if (!initialized_)
     {
-        ROS_ERROR("hateb_local_planner has not been initialized, please call initialize() before using this planner");
-        message = "hateb_local_planner has not been initialized";
-        return mbf_msgs::ExePathResult::NOT_INITIALIZED;
+        RCLCPP_ERROR(this->get_logger(), "hateb_local_planner has not been initialized, please call initialize() before using this planner");
     }
 
-    if (reset_states)
+    if (reset_states_)
     {
         for (int i = 0; i < agents_states_.states.size(); i++)
         {
-            agents_states_.states[i] = hateb_local_planner::AgentState::NO_STATE;
-            // agents_states_.states[i]=hateb_local_planner::AgentState::STATIC;
+            agents_states_.states[i] = AgentState::NO_STATE;
         }
-        reset_states = false;
+        reset_states_ = false;
     }
     static uint32_t seq = 0;
-    cmd_vel.header.seq = seq++;
-    cmd_vel.header.stamp = ros::Time::now();
+    cmd_vel.header.stamp = this->get_clock()->now();
     cmd_vel.header.frame_id = robot_base_frame_;
     cmd_vel.twist.linear.x = cmd_vel.twist.linear.y = cmd_vel.twist.angular.z = 0;
     goal_reached_ = false;
 
-    // Get robot pose
-    auto pose_get_start_time = ros::Time::now();
-    geometry_msgs::PoseStamped robot_pose;
-    costmap_ros_->getRobotPose(robot_pose);
-    robot_pose_ = PoseSE2(robot_pose.pose);
-    robot_pose_.toPoseMsg(robot_pos_msg);
-
-    if ((ros::Time::now() - last_door_pass_detect_).toSec() >= 5.0 && door_pass)
-    {
-        door_pass = false;
-        isMode = 0;
-    }
-    // robot_pose_pub_.publish(robot_pos_msg);
-    logs += "position: " + std::to_string(robot_pose.pose.position.x) + " " + std::to_string(robot_pose.pose.position.y) + "; ";
-    // logs+="position: x= " + std::to_string(robot_pose.pose.position.x) +", " + " y= " + std::to_string(robot_pose.pose.position.y)+", ";
-    // logs+=std::to_string(robot_pose.pose.position.x) +", " + std::to_string(robot_pose.pose.position.y);
-    if (std::hypot(robot_pose.pose.position.x - last_robot_pose.position.x, robot_pose.pose.position.y - last_robot_pose.position.y) > 0.06)
-    {
-        last_position_time = ros::Time::now();
-    }
-
-    last_robot_pose = robot_pose.pose;
-
-    if ((ros::Time::now() - last_position_time).toSec() >= 2.0 && cfg_.robot.type == 0)
+    // TODO: evaluate whether the robot is stuck or not
+    if ((this->get_clock()->now() - last_position_time_).seconds() >= 2.0)
     { // 0: Robot and 1: Human for type
-        if (visible_agent_ids.size() > 0)
+        if (visible_agent_ids_.size() > 0)
         {
-            if (agent_still[visible_agent_ids[0] - 1] && isDistunderThreshold && !stuck)
+            if (agent_still_[visible_agent_ids_[0] - 1] && is_dist_under_threshold_ && !stuck_)
             {
-                if (change_mode == 0)
+                if (change_mode_ == 0)
                 {
-                    ROS_INFO("I am stuck because of an agent, Changing to VelObs mode");
+                    RCLCPP_INFO(this->get_logger(), "I am stuck because of an agent, Changing to VelObs mode");
                 }
-                change_mode++;
-                isMode = 1;
-
-                if (change_mode > 20 && cfg_.hateb.enable_backoff)
-                {
-                    if (!stuck)
-                        ROS_INFO("I am stuck");
-                    stuck = true;
-                    agents_states_.states[visible_agent_ids[0] - 1] = hateb_local_planner::AgentState::BLOCKED;
-                    stuck_agent_id = visible_agent_ids[0];
-                    isMode = 2;
-                }
+                change_mode_++;
+                is_mode_ = 1;
             }
         }
     }
 
-    if (!stuck)
-        stuck_agent_id = -1;
-
-    auto pose_get_time = ros::Time::now() - pose_get_start_time;
-
-    // Get robot velocity
-    auto vel_get_start_time = ros::Time::now();
-    geometry_msgs::PoseStamped robot_vel_tf;
-    odom_helper_.getRobotVel(robot_vel_tf);
-    robot_vel_.linear.x = robot_vel_tf.pose.position.x;
-    robot_vel_.linear.y = robot_vel_tf.pose.position.y;
-    robot_vel_.angular.z = tf2::getYaw(robot_vel_tf.pose.orientation);
-    auto vel_get_time = ros::Time::now() - vel_get_start_time;
-    logs += "velocity: " + std::to_string(robot_vel_.linear.x) + " " + std::to_string(robot_vel_.linear.y) + "; ";
-    // logs+="velocity: x= " + std::to_string(robot_vel_.linear.x) +", "  + "y= "+ std::to_string(robot_vel_.linear.y)+", ";
-    // logs+= std::to_string(robot_vel_.linear.x) +", " + std::to_string(robot_vel_.linear.y)+", ";
-    // logs+="dist " + std::to_string(current_agent_dist)+", ";
+    if (!stuck_)
+        stuck_agent_id_ = -1;
 
     // prune global plan to cut off parts of the past (spatially before the robot)
-    auto prune_start_time = ros::Time::now();
-    pruneGlobalPlan(*tf_, robot_pose, global_plan_, cfg_.trajectory.global_plan_prune_distance);
-    auto prune_time = ros::Time::now() - prune_start_time;
+    pruneGlobalPlan(*tf_buffer_, last_robot_pose_, global_plan_, global_plan_prune_distance_);
 
     // Transform global plan to the frame of interest (w.r.t. the local costmap)
-    auto transform_start_time = ros::Time::now();
     PlanCombined transformed_plan_combined;
     int goal_idx;
-    geometry_msgs::TransformStamped tf_plan_to_global;
-    if (!transformGlobalPlan(*tf_, global_plan_, robot_pose, *costmap_, global_frame_, cfg_.trajectory.max_global_plan_lookahead_dist,
+    // TODO: add costmap_ support from nav2 costmap
+    geometry_msgs::msg::TransformStamped tf_plan_to_global;
+    if (!transformGlobalPlan(*tf_buffer_, global_plan_, robot_pose, *costmap_, global_frame_,
+                             max_global_plan_lookahead_dist_,
                              transformed_plan_combined, &goal_idx, &tf_plan_to_global))
     {
-        ROS_WARN("Could not transform the global plan to the frame of the controller");
-        message = "Could not transform the global plan to the frame of the controller";
-        return mbf_msgs::ExePathResult::INTERNAL_ERROR;
+        RCLCPP_WARN(this->get_logger(), "Could not transform the global plan to the frame of the controller");
     }
     auto &transformed_plan = transformed_plan_combined.plan_to_optimize;
-    auto transform_time = ros::Time::now() - transform_start_time;
 
-    // check if we should enter any backup mode and apply settings
-    configureBackupModes(transformed_plan, goal_idx);
-
-    // update via-points container
-    // if (!custom_via_points_active_)
-    //   updateViaPointsContainer(transformed_plan, cfg_.trajectory.global_plan_viapoint_sep);
-
-    auto other_start_time = ros::Time::now();
     // check if global goal is reached
-    geometry_msgs::PoseStamped global_goal;
+    geometry_msgs::msg::PoseStamped global_goal;
     tf2::doTransform(global_plan_.back(), global_goal, tf_plan_to_global);
     double dx = global_goal.pose.position.x - robot_pose_.x();
     double dy = global_goal.pose.position.y - robot_pose_.y();
     double delta_orient = g2o::normalize_theta(tf2::getYaw(global_goal.pose.orientation) - robot_pose_.theta());
-    if (fabs(std::sqrt(dx * dx + dy * dy)) < cfg_.goal_tolerance.xy_goal_tolerance && fabs(delta_orient) < cfg_.goal_tolerance.yaw_goal_tolerance && (!cfg_.goal_tolerance.complete_global_plan || via_points_.size() == 0) && goal_ctrl)
+    if (fabs(std::sqrt(dx * dx + dy * dy)) < xy_goal_tolerance_ && fabs(delta_orient) < yaw_goal_tolerance_ && (!complete_global_plan_ || via_points_.size() == 0) && goal_ctrl)
     {
         goal_reached_ = true;
-        return mbf_msgs::ExePathResult::SUCCESS;
     }
 
-    if (fabs(std::sqrt(dx * dx + dy * dy)) < 1.0 && !backed_off)
+    if (fabs(std::sqrt(dx * dx + dy * dy)) < 1.0)
     {
-        door_pass = true;
-        isMode = 5;
+        is_mode_ = 5;
     }
 
     // Return false if the transformed global plan is empty
     if (transformed_plan.empty())
     {
-        ROS_WARN("Transformed plan is empty. Cannot determine a local plan.");
-        message = "Transformed plan is empty";
-        return mbf_msgs::ExePathResult::INVALID_PATH;
+        RCLCPP_WARN(this->get_logger(), "Transformed plan is empty. Cannot determine a local plan.");
     }
 
     // Get current goal point (last point of the transformed plan)
     robot_goal_.x() = transformed_plan.back().pose.position.x;
     robot_goal_.y() = transformed_plan.back().pose.position.y;
     // Overwrite goal orientation if needed
-    if (cfg_.trajectory.global_plan_overwrite_orientation)
+    if (global_plan_overwrite_orientation_)
     {
         robot_goal_.theta() = estimateLocalGoalOrientation(global_plan_, transformed_plan.back(), goal_idx, tf_plan_to_global);
         // overwrite/update goal orientation of the transformed plan with the actual goal (enable using the plan as initialization)
         tf2::Quaternion q;
         q.setRPY(0, 0, robot_goal_.theta());
-        tf2::convert(q, transformed_plan.back().pose.orientation);
+        transformed_plan.back().pose.orientation = tf2::toMsg(q);
     }
     else
     {
@@ -515,16 +469,14 @@ uint32_t HATEBPlanningFramework::computeVelocityCommands(const geometry_msgs::ms
     // overwrite/update start of the transformed plan with the actual robot position (allows using the plan as initial trajectory)
     if (transformed_plan.size() == 1) // plan only contains the goal
     {
-        transformed_plan.insert(transformed_plan.begin(), geometry_msgs::PoseStamped()); // insert start (not yet initialized)
+        transformed_plan.insert(transformed_plan.begin(), geometry_msgs::msg::PoseStamped()); // insert start (not yet initialized)
     }
     transformed_plan.front() = robot_pose; // update start
 
     // clear currently existing obstacles
     obstacles_.clear();
-    auto other_time = ros::Time::now() - other_start_time;
 
     // Update obstacle container with costmap information or polygons provided by a costmap_converter plugin
-    auto cc_start_time = ros::Time::now();
     if (costmap_converter_)
         updateObstacleContainerWithCostmapConverter();
     else
@@ -533,386 +485,129 @@ uint32_t HATEBPlanningFramework::computeVelocityCommands(const geometry_msgs::ms
     // also consider custom obstacles (must be called after other updates, since the container is not cleared)
     updateObstacleContainerWithCustomObstacles();
     updateObstacleContainerWithInvHumans();
-    auto cc_time = ros::Time::now() - cc_start_time;
-
-    // Do not allow config changes during the following optimization step
-    boost::mutex::scoped_lock cfg_lock(cfg_.configMutex());
 
     // update agents
-    auto agent_start_time = ros::Time::now();
     std::vector<AgentPlanCombined> transformed_agent_plans;
     AgentPlanVelMap transformed_agent_plan_vel_map;
-    agents_states_pub_.publish(agents_states_);
+    agents_states_pub_->publish(agents_states_);
 
-    switch (cfg_.planning_mode)
+    bool found = true;
+    if (stuck_agent_id != -1)
     {
-    case 0:
+        if (!visible_agent_ids_.size() > 0)
+        {
+            if (visible_agent_ids_[0] != stuck_agent_id)
+                found = false;
+        }
+        else if (visible_agent_ids_.size() == 0)
+            found = false;
+    }
+
+    if (isDistMax || !found)
+    {
+        agents_via_points_map_.clear();
+
+        if (!visible_agent_ids_.size() > 0)
+        {
+            updateAgentViaPointsContainers(transformed_agent_plan_vel_map,
+                                           global_plan_viapoint_sep_);
+        }
         goal_ctrl = true;
+
         break;
-    case 1:
+    }
+
+    if (is_mode_ == 0)
+        is_mode_ = -1;
+
+    std::vector<int> static_agents_ids;
+
+    for (int i = 0; i < 2 && i < visible_agent_ids_.size(); i++)
     {
-        bool found = true;
-        if (stuck_agent_id != -1)
+        if ((int)agents_states_.states[visible_agent_ids_[i] - 1] > 1)
         {
-            if (visible_agent_ids.size() > 0)
-            {
-                if (visible_agent_ids[0] != stuck_agent_id)
-                    found = false;
-            }
-            else if (visible_agent_ids.size() == 0)
-                found = false;
-
-            // Check for timeout
-            if (backed_off && backoff_recovery_.timeOut())
-                found = false;
-        }
-
-        if (backoff_recovery_.checkRandomRot())
-        {
-            break;
-        }
-
-        if (isDistMax || !found)
-        {
-            agents_via_points_map_.clear();
-
-            if (visible_agent_ids.size() > 0)
-            {
-                updateAgentViaPointsContainers(transformed_agent_plan_vel_map,
-                                               cfg_.trajectory.global_plan_viapoint_sep);
-            }
-            if (backed_off)
-            {
-                if (backoff_recovery_.setbackGoal())
-                {
-                    isMode = 0;
-                    change_mode = 0;
-                    backed_off = false;
-                    stuck = false;
-                    // goal_ctrl = true;
-                    if (agents_states_.states[visible_agent_ids[0] - 1] != hateb_local_planner::AgentState::MOVING)
-                        agents_states_.states[visible_agent_ids[0] - 1] = hateb_local_planner::AgentState::STATIC;
-                }
-            }
-            else
-                goal_ctrl = true;
-
-            break;
-        }
-
-        if (backoff_recovery_.checkNewGoal())
-        {
-            goal_ctrl = true;
-            isMode = 0;
-            change_mode = 0;
-            backed_off = false;
-            stuck = false;
-            if (agents_states_.states[visible_agent_ids[0] - 1] != hateb_local_planner::AgentState::MOVING)
-                agents_states_.states[visible_agent_ids[0] - 1] = hateb_local_planner::AgentState::STATIC;
-        }
-
-        agent_path_prediction::AgentPosePredict predict_srv;
-
-        if (isMode == 0)
-            isMode = -1;
-
-        std::vector<int> static_agents_ids;
-
-        for (int i = 0; i < 2 && i < visible_agent_ids.size(); i++)
-        {
-            if ((int)agents_states_.states[visible_agent_ids[i] - 1] > 1)
-            {
-                predict_srv.request.ids.push_back(visible_agent_ids[i]);
-                if (isMode == -1)
-                    isMode = 0;
-            }
-            else
-            {
-                static_agents_ids.push_back(visible_agent_ids[i]);
-            }
-        }
-
-        if (cfg_.hateb.use_external_prediction && change_mode < 1)
-        {
-
-            std_srvs::Trigger g_srv;
-            agent_goal_client_.call(g_srv);
-            if (g_srv.response.success && !ext_goal)
-                ext_goal = true;
-
-            if (cfg_.hateb.predict_agent_behind_robot && !ext_goal)
-            {
-                predict_srv.request.type =
-                    agent_path_prediction::AgentPosePredictRequest::BEHIND_ROBOT;
-            }
-            else if (cfg_.hateb.predict_agent_goal && !ext_goal)
-            {
-                predict_srv.request.type =
-                    agent_path_prediction::AgentPosePredictRequest::PREDICTED_GOAL;
-            }
-            else
-            {
-                predict_srv.request.type =
-                    agent_path_prediction::AgentPosePredictRequest::EXTERNAL;
-            }
+            if (is_mode_ == -1)
+                is_mode_ = 0;
         }
         else
         {
-            if (!stuck && !door_pass)
-            {
-                isMode = 1;
-            }
-            double traj_size = 10, predict_time = 5.0; // TODO: make these values configurable
-            for (double i = 1.0; i <= traj_size; ++i)
-            {
-                predict_srv.request.predict_times.push_back(predict_time *
-                                                            (i / traj_size));
-            }
-            predict_srv.request.type =
-                agent_path_prediction::AgentPosePredictRequest::VELOCITY_OBSTACLE;
-            if (!backed_off && stuck)
-            {
-                backed_off = backoff_recovery_.recovery(ang_theta);
-                goal_ctrl = false;
-            }
+            static_agents_ids.push_back(visible_agent_ids_[i]);
         }
-
-        std_srvs::SetBool publish_predicted_markers_srv;
-        publish_predicted_markers_srv.request.data =
-            publish_predicted_agent_markers_;
-        if (!publish_predicted_markers_client_ &&
-            publish_predicted_markers_client_.call(publish_predicted_markers_srv))
-        {
-            ROS_WARN("Failed to call %s service, is agent prediction server running?",
-                     publish_makers_srv_name_.c_str());
-        }
-
-        if (predict_agents_client_ && predict_agents_client_.call(predict_srv))
-        {
-            tf2::Stamped<tf2::Transform> tf_agent_plan_to_global;
-
-            for (int indx = 0; indx < static_agents_ids.size(); indx++)
-            {
-                geometry_msgs::Twist empty_vel;
-                geometry_msgs::PoseStamped current_hpose;
-                current_hpose.header.frame_id = "static";
-                current_hpose.pose = agents_[static_agents_ids[indx] - 1];
-
-                PlanStartVelGoalVel plan_start_vel_goal_vel;
-                plan_start_vel_goal_vel.plan.push_back(current_hpose);
-                plan_start_vel_goal_vel.start_vel = empty_vel;
-                plan_start_vel_goal_vel.nominal_vel = 0;
-                plan_start_vel_goal_vel.isMode = isMode;
-                transformed_agent_plan_vel_map[static_agents_ids[indx]] = plan_start_vel_goal_vel;
-            }
-
-            for (auto predicted_agents_poses :
-                 predict_srv.response.predicted_agents_poses)
-            {
-
-                if (std::find(predict_srv.request.ids.begin(), predict_srv.request.ids.end(), predicted_agents_poses.id) == predict_srv.request.ids.end())
-                {
-                    continue;
-                }
-
-                if (isMode == 2)
-                    continue;
-
-                // transform agent plans
-                AgentPlanCombined agent_plan_combined;
-                auto &transformed_vel = predicted_agents_poses.start_velocity;
-
-                if (!transformAgentPlan(*tf_, robot_pose, *costmap_, global_frame_,
-                                        predicted_agents_poses.poses,
-                                        agent_plan_combined, transformed_vel,
-                                        &tf_agent_plan_to_global))
-                {
-                    ROS_WARN("Could not transform the agent %ld plan to the frame of the "
-                             "controller",
-                             predicted_agents_poses.id);
-                    continue;
-                }
-
-                agent_plan_combined.id = predicted_agents_poses.id;
-                transformed_agent_plans.push_back(agent_plan_combined);
-
-                PlanStartVelGoalVel plan_start_vel_goal_vel;
-                plan_start_vel_goal_vel.plan = agent_plan_combined.plan_to_optimize;
-                plan_start_vel_goal_vel.start_vel = transformed_vel.twist;
-                plan_start_vel_goal_vel.nominal_vel = std::max(0.3, agent_nominal_vels[predicted_agents_poses.id - 1]);
-                plan_start_vel_goal_vel.isMode = isMode;
-                if (agent_plan_combined.plan_after.size() > 0)
-                {
-                    plan_start_vel_goal_vel.goal_vel = transformed_vel.twist;
-                }
-                transformed_agent_plan_vel_map[agent_plan_combined.id] =
-                    plan_start_vel_goal_vel;
-            }
-        }
-        else
-        {
-            ROS_WARN_THROTTLE(
-                THROTTLE_RATE,
-                "Failed to call %s service, is agent prediction server running?",
-                predict_srv_name_.c_str());
-        }
-        updateAgentViaPointsContainers(transformed_agent_plan_vel_map,
-                                       cfg_.trajectory.global_plan_viapoint_sep);
-        break;
     }
-    case 2:
+
+    tf2::Stamped<tf2::Transform> tf_agent_plan_to_global;
+
+    for (int indx = 0; indx < static_agents_ids.size(); indx++)
     {
-        agent_path_prediction::AgentPosePredict predict_srv;
-        predict_srv.request.predict_times.push_back(0.0);
-        predict_srv.request.predict_times.push_back(5.0);
-        predict_srv.request.type =
-            agent_path_prediction::AgentPosePredictRequest::VELOCITY_OBSTACLE;
+        geometry_msgs::msg::Twist empty_vel;
+        geometry_msgs::msg::PoseStamped current_hpose;
+        current_hpose.header.frame_id = "static";
+        current_hpose.pose = agents_[static_agents_ids[indx] - 1];
 
-        // setup marker publishing
-        std_srvs::SetBool publish_predicted_markers_srv;
-        publish_predicted_markers_srv.request.data =
-            publish_predicted_agent_markers_;
-        if (!publish_predicted_markers_client_ &&
-            publish_predicted_markers_client_.call(publish_predicted_markers_srv))
-        {
-            ROS_WARN("Failed to call %s service, is agent prediction server running?",
-                     publish_makers_srv_name_.c_str());
-        }
-
-        // call agent prediction server
-        if (predict_agents_client_ && predict_agents_client_.call(predict_srv))
-        {
-            for (auto predicted_agents_poses :
-                 predict_srv.response.predicted_agents_poses)
-            {
-                if (predicted_agents_poses.id == cfg_.approach.approach_id)
-                {
-                    geometry_msgs::PoseStamped transformed_agent_pose;
-                    if (!transformAgentPose(*tf_, global_frame_,
-                                            predicted_agents_poses.poses.front(),
-                                            transformed_agent_pose))
-                    {
-                        ROS_WARN(
-                            "Could not transform the agent %ld pose to controller frame",
-                            predicted_agents_poses.id);
-                    }
-
-                    PlanStartVelGoalVel plan_start_vel_goal_vel;
-                    plan_start_vel_goal_vel.plan.push_back(transformed_agent_pose);
-                    plan_start_vel_goal_vel.nominal_vel = std::max(0.3, agent_nominal_vels[predicted_agents_poses.id - 1]);
-                    plan_start_vel_goal_vel.isMode = isMode;
-                    transformed_agent_plan_vel_map[predicted_agents_poses.id] =
-                        plan_start_vel_goal_vel;
-
-                    // update global plan of the robot
-                    // find position in front of the agent
-                    tf2::Transform tf_agent_pose, tf_approach_pose[3];
-                    geometry_msgs::PoseStamped approach_pose[3];
-                    for (int i = 0; i < 3; i++)
-                    {
-                        tf2::fromMsg(transformed_agent_pose.pose, tf_agent_pose);
-                        tf_approach_pose[i].setOrigin(tf2::Vector3(cfg_.approach.approach_dist + (2 - i) * 0.3, 0.0, 0.0));
-                        tf2::Quaternion approachQuaternion;
-                        approachQuaternion.setEuler(cfg_.approach.approach_angle, 0.0, 0.0);
-                        tf_approach_pose[i].setRotation(approachQuaternion);
-                        tf_approach_pose[i] = tf_agent_pose * tf_approach_pose[i];
-                        tf2::toMsg(tf_approach_pose[i], approach_pose[i].pose);
-                        approach_pose[i].header = transformed_agent_pose.header;
-                    }
-
-                    // add approach pose to the robot plan, only within reachable distance
-                    // auto &plan_goal = transformed_plan.back().pose;
-                    // auto &approach_goal = approach_pose[2].pose;
-                    tf2::Transform plan_goal, approach_goal;
-                    tf2::fromMsg(transformed_plan.back().pose, plan_goal);
-                    tf2::fromMsg(approach_pose[2].pose, approach_goal);
-                    double lin_dist = std::abs(
-                        std::hypot(plan_goal.getOrigin().getX() - approach_goal.getOrigin().getX(),
-                                   plan_goal.getOrigin().getY() - approach_goal.getOrigin().getY()));
-                    double ang_dist = std::abs(angles::shortest_angular_distance(
-                        tf2::impl::getYaw(plan_goal.getRotation()),
-                        tf2::impl::getYaw(approach_goal.getRotation())));
-                    // ROS_INFO("lin_dist=%.2f, ang_dist=%.2f", lin_dist, ang_dist);
-                    tf2::Transform tf_approach_global[3];
-                    geometry_msgs::PoseStamped approach_pose_global[3];
-                    if (lin_dist > cfg_.approach.approach_dist_tolerance ||
-                        ang_dist > cfg_.approach.approach_angle_tolerance)
-                    {
-                        for (int i = 0; i < 3; i++)
-                        {
-                            transformed_plan.push_back(approach_pose[i]);
-
-                            // get approach poses in to the frame of global plan
-                            tf2::Stamped<tf2::Transform> temp;
-                            tf2::fromMsg(tf_plan_to_global, temp);
-                            tf_approach_global[i] = temp.inverse() * tf_approach_pose[i];
-
-                            tf2::toMsg(tf_approach_global[i], approach_pose_global[i].pose);
-                            approach_pose_global[i].header = global_plan_.back().header;
-                        }
-
-                        // prune and update global plan
-                        auto global_plan_it = global_plan_.begin();
-                        double last_dist = std::numeric_limits<double>::infinity();
-                        while (global_plan_it != global_plan_.end())
-                        {
-                            auto &p_pos = (*global_plan_it).pose.position;
-                            auto &a_pos = approach_pose_global[0].pose.position;
-                            double pa_dist = std::hypot(p_pos.x - a_pos.x, p_pos.y - a_pos.y);
-                            if (pa_dist > last_dist)
-                            {
-                                break;
-                            }
-                            last_dist = pa_dist;
-                            global_plan_it++;
-                        }
-                        global_plan_.erase(global_plan_it, global_plan_.end());
-                        for (int i = 0; i < 3; i++)
-                        {
-                            global_plan_.push_back(approach_pose_global[i]);
-                        }
-                        ROS_INFO("Global plan modified for approach behavior");
-                    }
-                }
-            }
-        }
-        else
-        {
-            ROS_WARN_THROTTLE(
-                THROTTLE_RATE,
-                "Failed to call %s service, is agent prediction server running?",
-                predict_srv_name_.c_str());
-        }
-        // TODO: check if plan-map is not empty
-        break;
+        PlanStartVelGoalVel plan_start_vel_goal_vel;
+        plan_start_vel_goal_vel.plan.push_back(current_hpose);
+        plan_start_vel_goal_vel.start_vel = empty_vel;
+        plan_start_vel_goal_vel.nominal_vel = 0;
+        plan_start_vel_goal_vel.is_mode_ = is_mode_;
+        transformed_agent_plan_vel_map[static_agents_ids[indx]] = plan_start_vel_goal_vel;
     }
-    default:
-        break;
+
+    // TODO: predicted_agents_poses should contain the agents information
+    for (auto predicted_agents_poses :
+         predicted_agents_poses)
+    {
+
+        // transform agent plans
+        AgentPlanCombined agent_plan_combined;
+        auto &transformed_vel = predicted_agents_poses.start_velocity;
+        if (!transformAgentPlan(*tf_buffer_, robot_pose, *costmap_, global_frame_,
+                                predicted_agents_poses.poses,
+                                agent_plan_combined, transformed_vel,
+                                &tf_agent_plan_to_global))
+        {
+            RCLCPP_WARN(this->get_logger(),
+                        "Could not transform the agent %ld plan to the frame of the controller",
+                        predicted.id);
+            continue;
+        }
+
+        agent_plan_combined.id = predicted_agents_poses.id;
+        transformed_agent_plans.push_back(agent_plan_combined);
+
+        PlanStartVelGoalVel plan_start_vel_goal_vel;
+        plan_start_vel_goal_vel.plan = agent_plan_combined.plan_to_optimize;
+        plan_start_vel_goal_vel.start_vel = transformed_vel.twist;
+        plan_start_vel_goal_vel.nominal_vel = std::max(0.3, agent_nominal_vels[predicted_agents_poses.id - 1]);
+        plan_start_vel_goal_vel.is_mode_ = is_mode_;
+        if (!agent_plan_combined.plan_after.size() > 0)
+        {
+            plan_start_vel_goal_vel.goal_vel = transformed_vel.twist;
+        }
+        transformed_agent_plan_vel_map[agent_plan_combined.id] =
+            plan_start_vel_goal_vel;
     }
+    updateAgentViaPointsContainers(transformed_agent_plan_vel_map,
+                                   global_plan_viapoint_sep_);
 
     std::string mode;
 
-    if (isMode == 0)
+    if (is_mode_ == 0)
     {
         mode = "DualBand";
     }
-    else if (isMode == 1)
+    else if (is_mode_ == 1)
     {
         mode = "VelObs";
     }
-    else if (isMode == 2)
-    {
-        mode = "Backoff";
-    }
-    else if (isMode == 3)
+    else if (is_mode_ == 3)
     {
         mode = "Passing through";
     }
-    else if (isMode == 4)
+    else if (is_mode_ == 4)
     {
         mode = "Approaching Pillar";
     }
-    else if (isMode == 5)
+    else if (is_mode_ == 5)
     {
         mode = "Approaching Goal";
     }
@@ -920,52 +615,24 @@ uint32_t HATEBPlanningFramework::computeVelocityCommands(const geometry_msgs::ms
     {
         mode = "SingleBand";
     }
-    // logs+="Mode: " + mode+", ";
 
-    std_msgs::String log_msg;
-    log_msg.data = logs;
-    log_pub_.publish(log_msg);
-
-    auto agent_time = ros::Time::now() - agent_start_time;
-
-    // update via-points container
-    auto via_start_time = ros::Time::now();
-    // overwrite/update start of the transformed plan with the actual robot
-    // position (allows using the plan as initial trajectory)
-    // tf::poseTFToMsg(robot_pose, transformed_plan.front().pose);
     transformed_plan.front() = robot_pose;
     if (!custom_via_points_active_)
-        updateViaPointsContainer(transformed_plan, cfg_.trajectory.global_plan_viapoint_sep);
-    auto via_time = ros::Time::now() - via_start_time;
+        updateViaPointsContainer(transformed_plan, global_plan_viapoint_sep_);
 
-    // Now perform the actual
-    auto plan_start_time = ros::Time::now();
-    // bool success = planner_->plan(robot_pose_, robot_goal_, robot_vel_, cfg_.goal_tolerance.free_goal_vel); // straight line init
-    hateb_local_planner::OptimizationCostArray op_costs;
+    cohan_msgs::msg::OptimizationCostArray op_costs;
+    double dt_resize = dt_ref_;
+    double dt_hyst_resize = dt_hysteresis_;
 
-    double dt_resize = cfg_.trajectory.dt_ref;
-    double dt_hyst_resize = cfg_.trajectory.dt_hysteresis;
-
-    // if(isMode==0 or isMode==1){
-    //   dt_resize = 0.4;
-    //   dt_hyst_resize = 0.0125;
-    // }
-
-    bool success = planner_->plan(transformed_plan, &robot_vel_, cfg_.goal_tolerance.free_goal_vel, &transformed_agent_plan_vel_map, &op_costs, dt_resize, dt_hyst_resize, isMode);
+    bool success = planner_->plan(transformed_plan, &robot_vel_, free_goal_vel_, &transformed_agent_plan_vel_map, &op_costs, dt_resize, dt_hyst_resize, is_mode_);
 
     if (!success)
     {
         planner_->clearPlanner(); // force reinitialization for next time
-        ROS_WARN("hateb_local_planner was not able to obtain a local plan for the current setting.");
-
-        ++no_infeasible_plans_; // increase number of infeasible solutions in a row
-        time_last_infeasible_plan_ = ros::Time::now();
+        RCLCPP_WARN(node_->get_logger(), "hateb_local_planner was not able to obtain a local plan.");
+        ++no_infeasible_plans_;
         last_cmd_ = cmd_vel.twist;
-        message = "hateb_local_planner was not able to obtain a local plan";
-        return mbf_msgs::ExePathResult::NO_VALID_CMD;
     }
-    // op_costs_pub_.publish(op_costs);
-    auto plan_time = ros::Time::now() - plan_start_time;
 
     PlanTrajCombined plan_traj_combined;
     plan_traj_combined.plan_before = transformed_plan_combined.plan_before;
@@ -973,7 +640,7 @@ uint32_t HATEBPlanningFramework::computeVelocityCommands(const geometry_msgs::ms
     plan_traj_combined.plan_after = transformed_plan_combined.plan_after;
     visualization_->publishTrajectory(plan_traj_combined);
 
-    if (cfg_.planning_mode == 1)
+    if (planning_mode_ == 1)
     {
         visualization_->publishAgentGlobalPlans(transformed_agent_plans);
         std::vector<AgentPlanTrajCombined> agent_plans_traj_array;
@@ -996,74 +663,55 @@ uint32_t HATEBPlanningFramework::computeVelocityCommands(const geometry_msgs::ms
                             transformed_plan.back().pose.position.y - transformed_plan.front().pose.position.y) /
                  std::hypot(robot_vel_.linear.x, robot_vel_.linear.y);
 
-    // Undo temporary horizon reduction
-    auto hr2_start_time = ros::Time::now();
-
-    auto hr2_time = ros::Time::now() - hr2_start_time;
-
     // Check feasibility (but within the first few states only)
-    auto fsb_start_time = ros::Time::now();
-    if (cfg_.robot.is_footprint_dynamic)
+    if (is_footprint_dynamic_)
     {
-        // Update footprint of the robot and minimum and maximum distance from the center of the robot to its footprint vertices.
-        footprint_spec_ = costmap_ros_->getRobotFootprint();
-        costmap_2d::calculateMinAndMaxDistances(footprint_spec_, robot_inscribed_radius_, robot_circumscribed_radius);
+        // TODO: min and max distance would be the radius of the robot
+        // footprint_spec_ = costmap_ros_->getRobotFootprint();
+        // costmap_2d::calculateMinAndMaxDistances(footprint_spec_, robot_inscribed_radius_, robot_circumscribed_radius);
+        robot_inscribed_radius_ = 0.4;
+        robot_circumscribed_radius_ = 0.4;
     }
-    bool feasible = planner_->isTrajectoryFeasible(costmap_model_.get(), footprint_spec_, robot_inscribed_radius_, robot_circumscribed_radius, cfg_.trajectory.feasibility_check_no_poses);
+    bool feasible = planner_->isTrajectoryFeasible(costmap_model_, footprint_spec_, robot_inscribed_radius_, robot_circumscribed_radius, feasibility_check_no_poses_);
     if (!feasible)
     {
         cmd_vel.twist.linear.x = cmd_vel.twist.linear.y = cmd_vel.twist.angular.z = 0;
         // now we reset everything to start again with the initialization of new trajectories.
         planner_->clearPlanner();
-        ROS_WARN("HATebLocalPlannerROS: trajectory is not feasible. Resetting planner...");
-
+        RCLCPP_WARN(node_->get_logger(), "HATebLocalPlannerROS: trajectory is not feasible. Resetting planner...");
         ++no_infeasible_plans_; // increase number of infeasible solutions in a row
-        time_last_infeasible_plan_ = ros::Time::now();
         last_cmd_ = cmd_vel.twist;
-
-        message = "hateb_local_planner trajectory is not feasible";
-        return mbf_msgs::ExePathResult::NO_VALID_CMD;
     }
-    auto fsb_time = ros::Time::now() - fsb_start_time;
 
     // Get the velocity command for this sampling interval
-    auto vel_start_time = ros::Time::now();
-    if (!planner_->getVelocityCommand(cmd_vel.twist.linear.x, cmd_vel.twist.linear.y, cmd_vel.twist.angular.z, cfg_.trajectory.control_look_ahead_poses, dt_resize))
+    if (!planner_->getVelocityCommand(cmd_vel.twist.linear.x, cmd_vel.twist.linear.y, cmd_vel.twist.angular.z, control_look_ahead_poses_, dt_resize))
     {
         planner_->clearPlanner();
-        ROS_WARN("HATebLocalPlannerROS: velocity command invalid. Resetting planner...");
+        RCLCPP_WARN(node_->get_logger(), "HATebLocalPlannerROS: velocity command invalid. Resetting planner...");
         ++no_infeasible_plans_; // increase number of infeasible solutions in a row
-        time_last_infeasible_plan_ = ros::Time::now();
         last_cmd_ = cmd_vel.twist;
-        message = "hateb_local_planner velocity command invalid";
-        return mbf_msgs::ExePathResult::NO_VALID_CMD;
     }
 
     // Saturate velocity, if the optimization results violates the constraints (could be possible due to soft constraints).
     saturateVelocity(cmd_vel.twist.linear.x, cmd_vel.twist.linear.y, cmd_vel.twist.angular.z,
-                     cfg_.robot.max_vel_x, cfg_.robot.max_vel_y, cfg_.robot.max_vel_theta,
-                     cfg_.robot.max_vel_x_backwards);
+                     robot.max_vel_x_, robot.max_vel_y_, max_vel_theta_,
+                     max_vel_x_backwards_);
 
     // convert rot-vel to steering angle if desired (carlike robot).
     // The min_turning_radius is allowed to be slighly smaller since it is a soft-constraint
     // and opposed to the other constraints not affected by penalty_epsilon. The user might add a safety margin to the parameter itself.
-    if (cfg_.robot.cmd_angle_instead_rotvel)
+    if (cmd_angle_instead_rotvel_)
     {
-        cmd_vel.twist.angular.z = convertTransRotVelToSteeringAngle(cmd_vel.twist.linear.x, cmd_vel.twist.angular.z, cfg_.robot.wheelbase, 0.95 * cfg_.robot.min_turning_radius);
+        cmd_vel.twist.angular.z = convertTransRotVelToSteeringAngle(cmd_vel.twist.linear.x, cmd_vel.twist.angular.z, wheelbase_, 0.95 * min_turning_radius_);
         if (!std::isfinite(cmd_vel.twist.angular.z))
         {
             cmd_vel.twist.linear.x = cmd_vel.twist.linear.y = cmd_vel.twist.angular.z = 0;
             last_cmd_ = cmd_vel.twist;
             planner_->clearPlanner();
-            ROS_WARN("HATebLocalPlannerROS: Resulting steering angle is not finite. Resetting planner...");
-            ++no_infeasible_plans_; // increase number of infeasible solutions in a row
-            time_last_infeasible_plan_ = ros::Time::now();
-
-            message = "hateb_local_planner steering angle is not finite";
-            return mbf_msgs::ExePathResult::NO_VALID_CMD;
+            RCLCPP_WARN(node_->get_logger(), "HATebLocalPlannerROS: Resulting steering angle is not finite. Resetting planner...");
+            ++no_infeasible_plans_;
         }
     }
-    auto vel_time = ros::Time::now() - vel_start_time;
 
     // a feasible solution should be found, reset counter
     no_infeasible_plans_ = 0;
@@ -1072,7 +720,6 @@ uint32_t HATEBPlanningFramework::computeVelocityCommands(const geometry_msgs::ms
     last_cmd_ = cmd_vel.twist;
 
     // Now visualize everything
-    auto viz_start_time = ros::Time::now();
     planner_->visualize();
     visualization_->publishObstacles(obstacles_);
     visualization_->publishViaPoints(via_points_);
@@ -1081,40 +728,49 @@ uint32_t HATEBPlanningFramework::computeVelocityCommands(const geometry_msgs::ms
         visualization_->publishMode(-1);
     else
         visualization_->publishMode(isMode);
+}
 
-    auto viz_time = ros::Time::now() - viz_start_time;
-    auto total_time = ros::Time::now() - start_time;
+bool HATEBPlanningFramework::pruneGlobalPlan(const tf2_ros::Buffer &tf, const geometry_msgs::PoseStamped &global_pose, std::vector<geometry_msgs::PoseStamped> &global_plan, double dist_behind_robot)
+{
+    if (global_plan.empty())
+        return true;
 
-    ROS_DEBUG_STREAM_COND(total_time.toSec() > 0.1, "\tcompute velocity times:\n"
-                                                        << "\t\ttotal time                   "
-                                                        << std::to_string(total_time.toSec()) << "\n"
-                                                        << "\t\tpose get time                "
-                                                        << std::to_string(pose_get_time.toSec()) << "\n"
-                                                        << "\t\tvel get time                 "
-                                                        << std::to_string(vel_get_time.toSec()) << "\n"
-                                                        << "\t\tprune time                   "
-                                                        << std::to_string(prune_time.toSec()) << "\n"
-                                                        << "\t\ttransform time               "
-                                                        << std::to_string(transform_time.toSec()) << "\n"
-                                                        // << "\t\thorizon setup time           "
-                                                        // << std::to_string((hr1_time + hr2_time).toSec()) << "\n"
-                                                        << "\t\tother time                   "
-                                                        << std::to_string(other_time.toSec()) << "\n"
-                                                        << "\t\tcostmap convert time         "
-                                                        << std::to_string(cc_time.toSec()) << "\n"
-                                                        << "\t\tvia points time              "
-                                                        << std::to_string(via_time.toSec()) << "\n"
-                                                        << "\t\tagent time                   "
-                                                        << std::to_string(agent_time.toSec()) << "\n"
-                                                        << "\t\tplanning time                "
-                                                        << std::to_string(plan_time.toSec()) << "\n"
-                                                        << "\t\tplan feasibility check time  "
-                                                        << std::to_string(fsb_time.toSec()) << "\n"
-                                                        << "\t\tvelocity extract time        "
-                                                        << std::to_string(vel_time.toSec()) << "\n"
-                                                        << "\t\tvisualization publish time   "
-                                                        << std::to_string(viz_time.toSec()) << "\n=========================");
-    return mbf_msgs::ExePathResult::SUCCESS;
+    try
+    {
+        // transform robot pose into the plan frame (we do not wait here, since pruning not crucial, if missed a few times)
+        geometry_msgs::TransformStamped global_to_plan_transform = tf.lookupTransform(global_plan.front().header.frame_id, global_pose.header.frame_id, ros::Time(0));
+        geometry_msgs::PoseStamped robot;
+        tf2::doTransform(global_pose, robot, global_to_plan_transform);
+
+        double dist_thresh_sq = dist_behind_robot * dist_behind_robot;
+
+        // iterate plan until a pose close the robot is found
+        std::vector<geometry_msgs::PoseStamped>::iterator it = global_plan.begin();
+        std::vector<geometry_msgs::PoseStamped>::iterator erase_end = it;
+        while (it != global_plan.end())
+        {
+            double dx = robot.pose.position.x - it->pose.position.x;
+            double dy = robot.pose.position.y - it->pose.position.y;
+            double dist_sq = dx * dx + dy * dy;
+            if (dist_sq < dist_thresh_sq)
+            {
+                erase_end = it;
+                break;
+            }
+            ++it;
+        }
+        if (erase_end == global_plan.end())
+            return false;
+
+        if (erase_end != global_plan.begin())
+            global_plan.erase(global_plan.begin(), erase_end);
+    }
+    catch (const tf::TransformException &ex)
+    {
+        ROS_DEBUG("Cannot prune path since no transform is available: %s\n", ex.what());
+        return false;
+    }
+    return true;
 }
 
 //! Main function
