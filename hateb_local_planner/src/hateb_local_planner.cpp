@@ -63,7 +63,7 @@ public:
     void queryGoalCallback(const geometry_msgs::msg::PoseStamped::SharedPtr nav_goal_msg);
     //! Callback for getting the state of the Smf base controller
     void controlActiveCallback(const std_msgs::msg::Bool::SharedPtr control_active_msg);
-    bool HATebLocalPlannerROS::pruneGlobalPlan(const tf2_ros::Buffer &tf, const geometry_msgs::msg::PoseStamped &global_pose, std::vector<geometry_msgs::msg::PoseStamped> &global_plan, double dist_behind_robot);
+    bool HATebLocalPlannerROS::pruneGlobalPlan(const geometry_msgs::msg::PoseStamped &global_pose, std::vector<geometry_msgs::msg::PoseStamped> &global_plan, double dist_behind_robot);
     uint32_t computeVelocityCommands(const geometry_msgs::msg::PoseStamped &pose, const geometry_msgs::msg::TwistStamped &velocity, geometry_msgs::msg::TwistStamped &cmd_vel);
 
 private:
@@ -104,6 +104,7 @@ private:
     int is_mode_, change_mode_, stuck_agent_id_;
 
     bool enable_backoff_ = false;
+    bool is_dist_max_ = true;
     std::vector<bool> agent_still_;
     std::vector<int> visible_agent_ids_; // List of visible agents
     bool is_dist_under_threshold_, stuck_;
@@ -724,13 +725,13 @@ uint32_t HATEBPlanningFramework::computeVelocityCommands(const geometry_msgs::ms
     visualization_->publishObstacles(obstacles_);
     visualization_->publishViaPoints(via_points_);
     visualization_->publishGlobalPlan(global_plan_);
-    if (isDistMax && !door_pass)
+    if (is_dist_max_)
         visualization_->publishMode(-1);
     else
-        visualization_->publishMode(isMode);
+        visualization_->publishMode(is_mode_);
 }
 
-bool HATEBPlanningFramework::pruneGlobalPlan(const tf2_ros::Buffer &tf, const geometry_msgs::PoseStamped &global_pose, std::vector<geometry_msgs::PoseStamped> &global_plan, double dist_behind_robot)
+bool HATEBPlanningFramework::pruneGlobalPlan(const geometry_msgs::msg::PoseStamped &global_pose, std::vector<geometry_msgs::msg::PoseStamped> &global_plan, double dist_behind_robot)
 {
     if (global_plan.empty())
         return true;
@@ -738,15 +739,17 @@ bool HATEBPlanningFramework::pruneGlobalPlan(const tf2_ros::Buffer &tf, const ge
     try
     {
         // transform robot pose into the plan frame (we do not wait here, since pruning not crucial, if missed a few times)
-        geometry_msgs::TransformStamped global_to_plan_transform = tf.lookupTransform(global_plan.front().header.frame_id, global_pose.header.frame_id, ros::Time(0));
-        geometry_msgs::PoseStamped robot;
+        geometry_msgs::msg::TransformStamped global_to_plan_transform =
+            tf_buffer_->lookupTransform(global_plan.front().header.frame_id, global_pose.header.frame_id, rclcpp::Time(0));
+
+        geometry_msgs::msg::PoseStamped robot;
         tf2::doTransform(global_pose, robot, global_to_plan_transform);
 
         double dist_thresh_sq = dist_behind_robot * dist_behind_robot;
 
         // iterate plan until a pose close the robot is found
-        std::vector<geometry_msgs::PoseStamped>::iterator it = global_plan.begin();
-        std::vector<geometry_msgs::PoseStamped>::iterator erase_end = it;
+        std::vector<geometry_msgs::msg::PoseStamped>::iterator it = global_plan.begin();
+        std::vector<geometry_msgs::msg::PoseStamped>::iterator erase_end = it;
         while (it != global_plan.end())
         {
             double dx = robot.pose.position.x - it->pose.position.x;
@@ -765,9 +768,9 @@ bool HATEBPlanningFramework::pruneGlobalPlan(const tf2_ros::Buffer &tf, const ge
         if (erase_end != global_plan.begin())
             global_plan.erase(global_plan.begin(), erase_end);
     }
-    catch (const tf::TransformException &ex)
+    catch (const tf2::TransformException &ex)
     {
-        ROS_DEBUG("Cannot prune path since no transform is available: %s\n", ex.what());
+        RCLCPP_DEBUG(this->get_logger(), "Cannot prune path since no transform is available: %s", ex.what());
         return false;
     }
     return true;
