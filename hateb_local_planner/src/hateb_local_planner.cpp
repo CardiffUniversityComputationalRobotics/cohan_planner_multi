@@ -34,10 +34,13 @@
 #include <tf2_geometry_msgs/tf2_geometry_msgs.hpp>
 
 #include <nav_msgs/msg/path.hpp>
+#include <nav2_costmap_2d/costmap_2d.hpp>
 
 #include <cohan_msgs/msg/state_array.hpp>
 
 #include <visualization.h>
+
+#include <optimal_planner.h>
 
 enum AgentState
 {
@@ -63,8 +66,11 @@ public:
     void queryGoalCallback(const geometry_msgs::msg::PoseStamped::SharedPtr nav_goal_msg);
     //! Callback for getting the state of the Smf base controller
     void controlActiveCallback(const std_msgs::msg::Bool::SharedPtr control_active_msg);
-    bool HATebLocalPlannerROS::pruneGlobalPlan(const geometry_msgs::msg::PoseStamped &global_pose, std::vector<geometry_msgs::msg::PoseStamped> &global_plan, double dist_behind_robot);
+    bool pruneGlobalPlan(const geometry_msgs::msg::PoseStamped &global_pose, std::vector<geometry_msgs::msg::PoseStamped> &global_plan, double dist_behind_robot);
     uint32_t computeVelocityCommands(const geometry_msgs::msg::PoseStamped &pose, const geometry_msgs::msg::TwistStamped &velocity, geometry_msgs::msg::TwistStamped &cmd_vel);
+    bool transformGlobalPlan(const std::vector<geometry_msgs::PoseStamped> &global_plan,
+                             const geometry_msgs::PoseStamped &global_pose, const costmap_2d::Costmap2D &costmap, const std::string &global_frame, double max_plan_length,
+                             PlanCombined &transformed_plan_combined, int *current_goal_idx, geometry_msgs::TransformStamped *tf_plan_to_global) const;
 
 private:
     // ! SUBSCRIBERS
@@ -112,6 +118,18 @@ private:
     double global_plan_prune_distance_ = 4.0;
 
     nav2_costmap_2d::Costmap2D costmap_model_;
+
+    hateb_local_planner::ViaPointContainer via_points_; //!< Container of via-points that should be considered during local trajectory optimization
+    geometry_msgs::msg::Twist last_cmd_;                //!< Store the last control command generated in computeVelocityCommands()
+
+    double min_turning_radius_ = 0.1;
+    std::vector<geometry_msgs::msg::PoseStamped> global_plan_; //!< Store the current global plan
+    hateb_local_planner::ObstContainer obstacles_;             //!< Obstacle vector that should be considered during local trajectory optimization
+    int no_infeasible_plans_;                                  //!< Store how many times in a row the planner failed to find a feasible plan.
+    double max_global_plan_lookahead_dist_ = 3.0;
+    bool complete_global_plan_ = true;
+    bool goal_ctrl_ = true;
+    bool global_plan_overwrite_orientation_ = true;
 };
 
 //!  Constructor.
@@ -416,11 +434,11 @@ uint32_t HATEBPlanningFramework::computeVelocityCommands(const geometry_msgs::ms
     pruneGlobalPlan(*tf_buffer_, last_robot_pose_, global_plan_, global_plan_prune_distance_);
 
     // Transform global plan to the frame of interest (w.r.t. the local costmap)
-    PlanCombined transformed_plan_combined;
+    hateb_local_planner::PlanCombined transformed_plan_combined;
     int goal_idx;
     // TODO: add costmap_ support from nav2 costmap
     geometry_msgs::msg::TransformStamped tf_plan_to_global;
-    if (!transformGlobalPlan(*tf_buffer_, global_plan_, robot_pose, *costmap_, global_frame_,
+    if (!transformGlobalPlan(*tf_buffer_, global_plan_, robot_pose, *costmap_, world_frame_,
                              max_global_plan_lookahead_dist_,
                              transformed_plan_combined, &goal_idx, &tf_plan_to_global))
     {
@@ -434,7 +452,7 @@ uint32_t HATEBPlanningFramework::computeVelocityCommands(const geometry_msgs::ms
     double dx = global_goal.pose.position.x - robot_pose_.x();
     double dy = global_goal.pose.position.y - robot_pose_.y();
     double delta_orient = g2o::normalize_theta(tf2::getYaw(global_goal.pose.orientation) - robot_pose_.theta());
-    if (fabs(std::sqrt(dx * dx + dy * dy)) < xy_goal_tolerance_ && fabs(delta_orient) < yaw_goal_tolerance_ && (!complete_global_plan_ || via_points_.size() == 0) && goal_ctrl)
+    if (fabs(std::sqrt(dx * dx + dy * dy)) < xy_goal_tolerance_ && fabs(delta_orient) < yaw_goal_tolerance_ && (!complete_global_plan_ || via_points_.size() == 0) && goal_ctrl_)
     {
         goal_reached_ = true;
     }
@@ -478,10 +496,7 @@ uint32_t HATEBPlanningFramework::computeVelocityCommands(const geometry_msgs::ms
     obstacles_.clear();
 
     // Update obstacle container with costmap information or polygons provided by a costmap_converter plugin
-    if (costmap_converter_)
-        updateObstacleContainerWithCostmapConverter();
-    else
-        updateObstacleContainerWithCostmap();
+    updateObstacleContainerWithCostmap();
 
     // also consider custom obstacles (must be called after other updates, since the container is not cleared)
     updateObstacleContainerWithCustomObstacles();
@@ -504,7 +519,7 @@ uint32_t HATEBPlanningFramework::computeVelocityCommands(const geometry_msgs::ms
             found = false;
     }
 
-    if (isDistMax || !found)
+    if (is_dist_max || !found)
     {
         agents_via_points_map_.clear();
 
@@ -513,7 +528,7 @@ uint32_t HATEBPlanningFramework::computeVelocityCommands(const geometry_msgs::ms
             updateAgentViaPointsContainers(transformed_agent_plan_vel_map,
                                            global_plan_viapoint_sep_);
         }
-        goal_ctrl = true;
+        goal_ctrl_ = true;
 
         break;
     }
@@ -561,7 +576,7 @@ uint32_t HATEBPlanningFramework::computeVelocityCommands(const geometry_msgs::ms
         // transform agent plans
         AgentPlanCombined agent_plan_combined;
         auto &transformed_vel = predicted_agents_poses.start_velocity;
-        if (!transformAgentPlan(*tf_buffer_, robot_pose, *costmap_, global_frame_,
+        if (!transformAgentPlan(*tf_buffer_, robot_pose, *costmap_, world_frame_,
                                 predicted_agents_poses.poses,
                                 agent_plan_combined, transformed_vel,
                                 &tf_agent_plan_to_global))
@@ -630,7 +645,7 @@ uint32_t HATEBPlanningFramework::computeVelocityCommands(const geometry_msgs::ms
     if (!success)
     {
         planner_->clearPlanner(); // force reinitialization for next time
-        RCLCPP_WARN(node_->get_logger(), "hateb_local_planner was not able to obtain a local plan.");
+        RCLCPP_WARN(this->get_logger(), "hateb_local_planner was not able to obtain a local plan.");
         ++no_infeasible_plans_;
         last_cmd_ = cmd_vel.twist;
     }
@@ -679,7 +694,7 @@ uint32_t HATEBPlanningFramework::computeVelocityCommands(const geometry_msgs::ms
         cmd_vel.twist.linear.x = cmd_vel.twist.linear.y = cmd_vel.twist.angular.z = 0;
         // now we reset everything to start again with the initialization of new trajectories.
         planner_->clearPlanner();
-        RCLCPP_WARN(node_->get_logger(), "HATebLocalPlannerROS: trajectory is not feasible. Resetting planner...");
+        RCLCPP_WARN(this->get_logger(), "HATebLocalPlannerROS: trajectory is not feasible. Resetting planner...");
         ++no_infeasible_plans_; // increase number of infeasible solutions in a row
         last_cmd_ = cmd_vel.twist;
     }
@@ -688,7 +703,7 @@ uint32_t HATEBPlanningFramework::computeVelocityCommands(const geometry_msgs::ms
     if (!planner_->getVelocityCommand(cmd_vel.twist.linear.x, cmd_vel.twist.linear.y, cmd_vel.twist.angular.z, control_look_ahead_poses_, dt_resize))
     {
         planner_->clearPlanner();
-        RCLCPP_WARN(node_->get_logger(), "HATebLocalPlannerROS: velocity command invalid. Resetting planner...");
+        RCLCPP_WARN(this->get_logger(), "HATebLocalPlannerROS: velocity command invalid. Resetting planner...");
         ++no_infeasible_plans_; // increase number of infeasible solutions in a row
         last_cmd_ = cmd_vel.twist;
     }
@@ -709,7 +724,7 @@ uint32_t HATEBPlanningFramework::computeVelocityCommands(const geometry_msgs::ms
             cmd_vel.twist.linear.x = cmd_vel.twist.linear.y = cmd_vel.twist.angular.z = 0;
             last_cmd_ = cmd_vel.twist;
             planner_->clearPlanner();
-            RCLCPP_WARN(node_->get_logger(), "HATebLocalPlannerROS: Resulting steering angle is not finite. Resetting planner...");
+            RCLCPP_WARN(this->get_logger(), "HATebLocalPlannerROS: Resulting steering angle is not finite. Resetting planner...");
             ++no_infeasible_plans_;
         }
     }
@@ -773,6 +788,147 @@ bool HATEBPlanningFramework::pruneGlobalPlan(const geometry_msgs::msg::PoseStamp
         RCLCPP_DEBUG(this->get_logger(), "Cannot prune path since no transform is available: %s", ex.what());
         return false;
     }
+    return true;
+}
+
+bool HATebLocalPlannerROS::transformGlobalPlan(const tf2_ros::Buffer &tf, const std::vector<geometry_msgs::PoseStamped> &global_plan,
+                                               const geometry_msgs::PoseStamped &global_pose, const costmap_2d::Costmap2D &costmap, const std::string &global_frame, double max_plan_length,
+                                               PlanCombined &transformed_plan_combined, int *current_goal_idx, geometry_msgs::TransformStamped *tf_plan_to_global) const
+
+{
+    // this method is a slightly modified version of base_local_planner/goal_functions.h
+
+    const geometry_msgs::PoseStamped &plan_pose = global_plan[0];
+
+    transformed_plan_combined.plan_to_optimize.clear();
+
+    try
+    {
+        if (global_plan.empty())
+        {
+            ROS_ERROR("Received plan with zero length");
+            *current_goal_idx = 0;
+            return false;
+        }
+
+        // get plan_to_global_transform from plan frame to global_frame
+        geometry_msgs::TransformStamped plan_to_global_transform = tf.lookupTransform(global_frame, ros::Time(0), plan_pose.header.frame_id, plan_pose.header.stamp,
+                                                                                      plan_pose.header.frame_id, ros::Duration(0.5));
+
+        // let's get the pose of the robot in the frame of the plan
+        geometry_msgs::PoseStamped robot_pose;
+        tf.transform(global_pose, robot_pose, plan_pose.header.frame_id, ros::Duration(0.05));
+
+        // we'll discard points on the plan that are outside the local costmap
+        double dist_threshold = std::max(costmap.getSizeInCellsX() * costmap.getResolution() / 2.0,
+                                         costmap.getSizeInCellsY() * costmap.getResolution() / 2.0) *
+                                2.0;
+        // dist_threshold *= 0.85; // just consider 85% of the costmap size to better incorporate point obstacle that are
+        // located on the border of the local costmap
+        dist_threshold *= 0.9;
+
+        int i = 0;
+        double sq_dist_threshold = dist_threshold * dist_threshold;
+        double sq_dist = 1e10;
+
+        tf2::Stamped<tf2::Transform> tf_pose;
+        geometry_msgs::PoseStamped newer_pose;
+        // we need to loop to a point on the plan that is within a certain distance of the robot
+        for (int j = 0; j < (int)global_plan.size(); ++j)
+        {
+            double x_diff = robot_pose.pose.position.x - global_plan[j].pose.position.x;
+            double y_diff = robot_pose.pose.position.y - global_plan[j].pose.position.y;
+            double new_sq_dist = x_diff * x_diff + y_diff * y_diff;
+            if (new_sq_dist > sq_dist_threshold)
+                break; // force stop if we have reached the costmap border
+
+            if (new_sq_dist < sq_dist) // find closest distance
+            {
+                sq_dist = new_sq_dist;
+                i = j;
+            }
+
+            const geometry_msgs::PoseStamped &pose = global_plan[i];
+            tf2::doTransform(pose, newer_pose, plan_to_global_transform);
+
+            transformed_plan_combined.plan_before.push_back(newer_pose);
+        }
+        double plan_length = 0; // check cumulative Euclidean distance along the plan
+
+        // now we'll transform until points are outside of our distance threshold
+        while (i < (int)global_plan.size() && sq_dist <= sq_dist_threshold && (max_plan_length <= 0 || plan_length <= max_plan_length))
+        {
+            const geometry_msgs::PoseStamped &pose = global_plan[i];
+            tf2::doTransform(pose, newer_pose, plan_to_global_transform);
+
+            transformed_plan_combined.plan_to_optimize.push_back(newer_pose);
+
+            double x_diff = robot_pose.pose.position.x - global_plan[i].pose.position.x;
+            double y_diff = robot_pose.pose.position.y - global_plan[i].pose.position.y;
+            sq_dist = x_diff * x_diff + y_diff * y_diff;
+
+            // caclulate distance to previous pose
+            if (i > 0 && max_plan_length > 0)
+                plan_length += distance_points2d(global_plan[i - 1].pose.position, global_plan[i].pose.position);
+            ++i;
+        }
+
+        // // // Modification for hateb_local_planner:
+        // // // Return the index of the current goal point (inside the distance
+        // // // threshold)
+        if (current_goal_idx)
+            *current_goal_idx = i - 1; // minus 1, since i was increased once before leaving the loop
+
+        while (i < global_plan.size())
+        {
+            const geometry_msgs::PoseStamped &pose = global_plan[i];
+            tf2::doTransform(pose, newer_pose, plan_to_global_transform);
+            transformed_plan_combined.plan_after.push_back(newer_pose);
+            ++i;
+        }
+
+        // if we are really close to the goal (<sq_dist_threshold) and the goal is not yet reached (e.g. orientation error >>0)
+        // the resulting transformed plan can be empty. In that case we explicitly inject the global goal.
+        if (transformed_plan_combined.plan_after.empty())
+        {
+            tf2::doTransform(global_plan.back(), newer_pose, plan_to_global_transform);
+
+            transformed_plan_combined.plan_after.push_back(newer_pose);
+
+            // Return the index of the current goal point (inside the distance threshold)
+            if (current_goal_idx)
+                *current_goal_idx = int(global_plan.size()) - 1;
+        }
+        else
+        {
+            // Return the index of the current goal point (inside the distance threshold)
+            if (current_goal_idx)
+                *current_goal_idx = i - 1; // subtract 1, since i was increased once before leaving the loop
+        }
+
+        // Return the transformation from the global plan to the global planning frame if desired
+        if (tf_plan_to_global)
+            *tf_plan_to_global = plan_to_global_transform;
+    }
+    catch (tf::LookupException &ex)
+    {
+        ROS_ERROR("No Transform available Error: %s\n", ex.what());
+        return false;
+    }
+    catch (tf::ConnectivityException &ex)
+    {
+        ROS_ERROR("Connectivity Error: %s\n", ex.what());
+        return false;
+    }
+    catch (tf::ExtrapolationException &ex)
+    {
+        ROS_ERROR("Extrapolation Error: %s\n", ex.what());
+        if (global_plan.size() > 0)
+            ROS_ERROR("Global Frame: %s Plan Frame size %d: %s\n", global_frame.c_str(), (unsigned int)global_plan.size(), global_plan[0].header.frame_id.c_str());
+
+        return false;
+    }
+
     return true;
 }
 
