@@ -752,7 +752,7 @@ namespace hateb_local_planner
     bool initialized_; //!< Keeps track about the correct initialization of this class
     bool optimized_;   //!< This variable is \c true as long as the last optimization has been completed successful
     double agent_radius_, robot_radius_;
-    int isMode;                             // Planning Mode
+    int is_mode_;                           // Planning Mode
     std::vector<double> agent_nominal_vels; // Nominal agent velocities calculated using moving average filter
     double current_agent_robot_min_dist;    // Controls addition of edges
 

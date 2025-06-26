@@ -72,7 +72,7 @@ namespace hateb_local_planner
     geometry_msgs::msg::Twist start_vel;
     geometry_msgs::msg::Twist goal_vel;
     double nominal_vel;
-    int isMode;
+    int is_mode_;
   } PlanStartVelGoalVel;
 
   using AgentPlanVelMap = std::map<uint64_t, PlanStartVelGoalVel>;

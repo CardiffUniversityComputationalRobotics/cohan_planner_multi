@@ -126,10 +126,10 @@ namespace hateb_local_planner
       assert(std::isfinite(_error[0]));
     }
 
-    void setParameters(const BaseRobotFootprintModel *robot_model, const int isMode)
+    void setParameters(const BaseRobotFootprintModel *robot_model, const int is_mode_)
     {
       robot_model_ = robot_model;
-      mode = isMode;
+      mode = is_mode_;
     }
 
   protected:
@@ -212,10 +212,10 @@ namespace hateb_local_planner
       assert(std::isfinite(_error[0]) && std::isfinite(_error[1]) && std::isfinite(_error[2]));
     }
 
-    void setParameters(const BaseRobotFootprintModel *robot_model, const int isMode)
+    void setParameters(const BaseRobotFootprintModel *robot_model, const int is_mode_)
     {
       robot_model_ = robot_model;
-      mode = isMode;
+      mode = is_mode_;
     }
 
   protected:

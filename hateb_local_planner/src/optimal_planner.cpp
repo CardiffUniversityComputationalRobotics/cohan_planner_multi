@@ -106,7 +106,7 @@ namespace hateb_local_planner
     agent_radius_ = agent_model_->getCircumscribedRadius();
 
     initialized_ = true;
-    isMode = 0;
+    is_mode_ = 0;
   }
 
   void TebOptimalPlanner::setVisualization(TebVisualizationPtr visualization)
@@ -289,7 +289,7 @@ namespace hateb_local_planner
 
   bool TebOptimalPlanner::plan(const std::vector<geometry_msgs::msg::PoseStamped> &initial_plan, const geometry_msgs::msg::Twist *start_vel, bool free_goal_vel, const AgentPlanVelMap *initial_agent_plan_vel_map, cohan_msgs::msg::OptimizationCostArray *op_costs, double dt_ref, double dt_hyst, int Mode)
   {
-    isMode = Mode;
+    is_mode_ = Mode;
     assert(initialized_);
 
     auto prep_start_time = rclcpp::Clock().now();
@@ -370,7 +370,7 @@ namespace hateb_local_planner
         auto &agent_id = initial_agent_plan_vel_kv.first;
         auto &initial_agent_plan = initial_agent_plan_vel_kv.second.plan;
 
-        // isMode = initial_agent_plan_vel_kv.second.isMode;
+        // is_mode_ = initial_agent_plan_vel_kv.second.is_mode_;
         // erase agent-teb if agent plan is empty
         if (initial_agent_plan.empty())
         {
@@ -531,7 +531,7 @@ namespace hateb_local_planner
 
   bool TebOptimalPlanner::plan(const geometry_msgs::msg::Pose &start, const geometry_msgs::msg::Pose &goal, const geometry_msgs::msg::Twist *start_vel, bool free_goal_vel, cohan_msgs::msg::OptimizationCostArray *op_costs, double dt_ref, double dt_hyst, int Mode)
   {
-    isMode = Mode;
+    is_mode_ = Mode;
     auto start_time = rclcpp::Clock().now();
     PoseSE2 start_(start);
     PoseSE2 goal_(goal);
@@ -543,7 +543,7 @@ namespace hateb_local_planner
 
   bool TebOptimalPlanner::plan(const PoseSE2 &start, const PoseSE2 &goal, const geometry_msgs::msg::Twist *start_vel, bool free_goal_vel, double pre_plan_time, cohan_msgs::msg::OptimizationCostArray *op_costs, double dt_ref, double dt_hyst, int Mode)
   {
-    isMode = Mode;
+    is_mode_ = Mode;
     assert(initialized_);
     auto prep_start_time = rclcpp::Clock().now();
     if (!teb_.isInit())
@@ -1129,7 +1129,7 @@ namespace hateb_local_planner
 
   void TebOptimalPlanner::AddEdgesInvisibleHumans(double weight_multiplier)
   {
-    if (weight_invisible_human_ == 0 || weight_multiplier == 0 || obstacles_ == NULL || isMode >= 3)
+    if (weight_invisible_human_ == 0 || weight_multiplier == 0 || obstacles_ == NULL || is_mode_ >= 3)
       return; // if weight equals zero skip adding edges!
 
     Eigen::Matrix<double, 1, 1> information;
@@ -1157,7 +1157,7 @@ namespace hateb_local_planner
 
   void TebOptimalPlanner::AddEdgesInvisibleHumansVelocity(double weight_multiplier)
   {
-    if (weight_invisible_human_ == 0 || weight_multiplier == 0 || obstacles_ == NULL || isMode >= 3)
+    if (weight_invisible_human_ == 0 || weight_multiplier == 0 || obstacles_ == NULL || is_mode_ >= 3)
       return; // if weight equals zero skip adding edges!
 
     // std::cout << "Ima" << '\n';
@@ -1338,7 +1338,7 @@ namespace hateb_local_planner
         velocity_edge->setVertex(1, teb_.PoseVertex(i + 1));
         velocity_edge->setVertex(2, teb_.TimeDiffVertex(i));
         velocity_edge->setInformation(information);
-        velocity_edge->setParameters(robot_model_.get(), isMode);
+        velocity_edge->setParameters(robot_model_.get(), is_mode_);
         optimizer_->addEdge(velocity_edge);
       }
       // }
@@ -1359,13 +1359,13 @@ namespace hateb_local_planner
       //   auto &agent_teb = agent_teb_kv.second;
       for (int i = 0; i < n - 1; ++i)
       {
-        // std::cout << "isMode" <<isMode << '\n';
+        // std::cout << "is_mode_" <<is_mode_ << '\n';
         EdgeVelocityHolonomic *velocity_edge = new EdgeVelocityHolonomic;
         velocity_edge->setVertex(0, teb_.PoseVertex(i));
         velocity_edge->setVertex(1, teb_.PoseVertex(i + 1));
         velocity_edge->setVertex(2, teb_.TimeDiffVertex(i));
         velocity_edge->setInformation(information);
-        velocity_edge->setParameters(robot_model_.get(), isMode);
+        velocity_edge->setParameters(robot_model_.get(), is_mode_);
         optimizer_->addEdge(velocity_edge);
       }
       // }
@@ -1956,7 +1956,7 @@ namespace hateb_local_planner
       auto &agent_teb = agent_teb_kv.second;
       size_t agent_teb_size = agent_teb.sizePoses();
       for (unsigned int i = 0;
-           (i < agent_teb_size - 1) && (i < robot_teb_size - 1) && (isMode == 0); i++)
+           (i < agent_teb_size - 1) && (i < robot_teb_size - 1) && (is_mode_ == 0); i++)
       {
 
         EdgeAgentRobotTTCplus *agent_robot_ttcplus_edge = new EdgeAgentRobotTTCplus();
@@ -2057,7 +2057,7 @@ namespace hateb_local_planner
       return;
     }
     double min_dist_ = min_agent_robot_dist_;
-    // if(isMode==1){
+    // if(is_mode_==1){
     //   min_dist_ = 0.2;
     // }
 
