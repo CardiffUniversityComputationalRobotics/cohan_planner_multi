@@ -71,6 +71,7 @@ public:
     bool transformGlobalPlan(const std::vector<geometry_msgs::msg::PoseStamped> &global_plan,
                              const geometry_msgs::msg::PoseStamped &global_pose, const nav2_costmap_2d::Costmap2D &costmap, const std::string &global_frame, double max_plan_length,
                              hateb_local_planner::PlanCombined &transformed_plan_combined, int *current_goal_idx, geometry_msgs::msg::TransformStamped *tf_plan_to_global) const;
+    void saturateVelocity(double &vx, double &vy, double &omega, double max_vel_x, double max_vel_y, double max_vel_theta, double max_vel_x_backwards);
 
 private:
     // ! SUBSCRIBERS
@@ -913,6 +914,52 @@ bool HATEBPlanningFramework::transformGlobalPlan(const std::vector<geometry_msgs
     }
 
     return true;
+}
+
+void HATEBPlanningFramework::saturateVelocity(double &vx, double &vy, double &omega, double max_vel_x, double max_vel_y, double max_vel_theta, double max_vel_x_backwards)
+{
+    // Limit translational velocity for forward driving
+    if (vx > max_vel_x)
+        vx = max_vel_x;
+
+    // limit strafing velocity
+    if (vy > max_vel_y)
+        vy = max_vel_y;
+    else if (vy < -max_vel_y)
+        vy = -max_vel_y;
+
+    // Limit angular velocity
+    if (omega > max_vel_theta)
+        omega = max_vel_theta;
+    else if (omega < -max_vel_theta)
+        omega = -max_vel_theta;
+
+    // Limit backwards velocity
+    if (max_vel_x_backwards <= 0)
+    {
+        RCLCPP_WARN(this->get_logger(), "HATebLocalPlannerROS(): Do not choose max_vel_x_backwards to be <=0. Disable backwards driving by increasing the optimization weight for penalyzing backwards driving.");
+    }
+    else if (vx < -max_vel_x_backwards)
+        vx = -max_vel_x_backwards;
+
+    // slow change of direction in angular velocity
+    double min_vel_theta = 0.02;
+    if (cfg_.optim.disable_rapid_omega_chage)
+    {
+        if (std::signbit(omega) != std::signbit(last_omega_))
+        {
+            // signs are changed
+            auto now = ros::Time::now();
+            if ((now - last_omega_sign_change_).toSec() <
+                cfg_.optim.omega_chage_time_seperation)
+            {
+                // do not allow sign change
+                omega = std::copysign(min_vel_theta, omega);
+            }
+            last_omega_sign_change_ = now;
+            last_omega_ = omega;
+        }
+    }
 }
 
 //! Main function
