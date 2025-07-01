@@ -36,6 +36,7 @@
 #include <nav_msgs/msg/path.hpp>
 #include <nav2_costmap_2d/costmap_2d.hpp>
 
+#include <nav2_msgs/msg/costmap.hpp>
 #include <cohan_msgs/msg/state_array.hpp>
 
 #include <visualization.h>
@@ -73,14 +74,21 @@ public:
                              const geometry_msgs::msg::PoseStamped &global_pose, const nav2_costmap_2d::Costmap2D &costmap, const std::string &global_frame, double max_plan_length,
                              hateb_local_planner::PlanCombined &transformed_plan_combined, int *current_goal_idx, geometry_msgs::msg::TransformStamped *tf_plan_to_global) const;
     void saturateVelocity(double &vx, double &vy, double &omega, double max_vel_x, double max_vel_y, double max_vel_theta, double max_vel_x_backwards);
-    double estimateLocalGoalOrientation(const std::vector<geometry_msgs::PoseStamped> &global_plan, const geometry_msgs::PoseStamped &local_goal,
-                                        int current_goal_idx, const geometry_msgs::TransformStamped &tf_plan_to_global, int moving_average_length) const;
+    double estimateLocalGoalOrientation(const std::vector<geometry_msgs::msg::PoseStamped> &global_plan, const geometry_msgs::msg::PoseStamped &local_goal,
+                                        int current_goal_idx, const geometry_msgs::msg::TransformStamped &tf_plan_to_global, int moving_average_length = 3) const;
+    bool transformAgentPlan(const geometry_msgs::msg::PoseStamped &robot_pose,
+                            const nav2_costmap_2d::Costmap2D &costmap, const std::string &global_frame,
+                            const std::vector<geometry_msgs::msg::PoseWithCovarianceStamped> &agent_plan,
+                            hateb_local_planner::AgentPlanCombined &transformed_agent_plan_combined,
+                            geometry_msgs::msg::TwistStamped &transformed_agent_twist,
+                            tf2::Stamped<tf2::Transform> *tf_agent_plan_to_global) const;
 
 private:
     // ! SUBSCRIBERS
     rclcpp::Subscription<nav_msgs::msg::Odometry>::SharedPtr odom_sub_;
     rclcpp::Subscription<geometry_msgs::msg::PoseStamped>::SharedPtr nav_goal_sub_;
     rclcpp::Subscription<std_msgs::msg::Bool>::SharedPtr control_active_sub_;
+    rclcpp::Subscription<nav2_msgs::msg::Costmap>::SharedPtr costmap_sub_;
 
     // ! PUBLISHERS
     rclcpp::Publisher<std_msgs::msg::Bool>::SharedPtr goal_reached_pub_;
@@ -111,7 +119,7 @@ private:
     rclcpp::Time last_position_time_;
 
     int robot_type_ = 0;
-    int is_mode_, change_mode_, stuck_agent_id_;
+    int is_mode_, change_mode_;
 
     bool enable_backoff_ = false;
     bool is_dist_max_ = true;
@@ -121,7 +129,8 @@ private:
 
     double global_plan_prune_distance_ = 4.0;
 
-    nav2_costmap_2d::Costmap2D costmap_model_;
+    nav2_costmap_2d::Costmap2D *costmap_;
+    boost::shared_ptr<nav2_costmap_2d::Costmap2D> costmap_model_;
 
     hateb_local_planner::ViaPointContainer via_points_; //!< Container of via-points that should be considered during local trajectory optimization
     geometry_msgs::msg::Twist last_cmd_;                //!< Store the last control command generated in computeVelocityCommands()
@@ -134,6 +143,40 @@ private:
     bool complete_global_plan_ = true;
     bool goal_ctrl_ = true;
     bool global_plan_overwrite_orientation_ = true;
+    std::vector<geometry_msgs::msg::Pose> agents_;
+    hateb_local_planner::TebVisualizationPtr visualization_; //!< Instance of the visualization class (local/global plan, obstacles, ...)
+    hateb_local_planner::PlannerInterfacePtr planner_;       //!< Instance of the underlying optimal planner class
+
+    std::map<uint64_t, hateb_local_planner::ViaPointContainer> agents_via_points_map_;
+
+    double max_vel_x_ = 0.4;
+    double max_vel_y_ = 0.0;
+    double max_vel_theta_ = 1.0;
+    double max_vel_x_backwards_ = 0.0;
+
+    double wheelbase_ = 1.0;
+    double omega_chage_time_seperation_ = 1.0;
+    bool cmd_angle_instead_rotvel_ = false;
+
+    rclcpp::Time last_omega_sign_change_ = this->now() - rclcpp::Duration::from_seconds(omega_chage_time_seperation_);
+
+    bool disable_rapid_omega_chage_ = true;
+    double last_omega_;
+
+    double robot_inscribed_radius_ = 0.4;
+    double robot_circumscribed_radius_ = 0.4;
+
+    double dt_hysteresis_ = 0.1;
+    double dt_ref_ = 0.3;
+    bool free_goal_vel_ = false;
+    bool custom_via_points_active_; //!< Keep track whether valid via-points have been received from via_points_sub_
+    double global_plan_viapoint_sep_ = -0.1;
+    int feasibility_check_no_poses_ = 5;
+    int control_look_ahead_poses_;            //! Index of the pose used to extract the velocity command
+    std::vector<double> agent_nominal_vels_;  // Nominal velocities  of agents based on moving average filter
+    hateb_local_planner::PoseSE2 robot_goal_; //!< Store current robot goal
+
+    double agent_radius_ = 0.4;
 };
 
 //!  Constructor.
@@ -195,6 +238,8 @@ HATEBPlanningFramework::HATEBPlanningFramework()
 
     // Controller active flag
     // control_active_sub_ = this->create_subscription<std_msgs::msg::Bool>(control_active_topic_, 1, std::bind(&OnlinePlannFramework::controlActiveCallback, this, std::placeholders::_1));
+
+    costmap_sub_ = this->create_subscription<nav2_msgs::msg::Costmap>("/local_costmap/costmap_raw", 1, std::bind(&HATEBPlanningFramework::costmapCallback, this, std::placeholders::_1));
 
     //=======================================================================
     // ! Publishers
@@ -281,6 +326,21 @@ void HATEBPlanningFramework::controlActiveCallback(const std_msgs::msg::Bool::Sh
     control_active_ = control_active_msg->data;
 }
 
+void HATEBPlanningFramework::costmapCallback(const nav2_msgs::msg::Costmap::SharedPtr costmap_msg)
+{
+    // Resize local copy of costmap
+    costmap_->resizeMap(
+        costmap_msg->metadata.size_x,
+        costmap_msg->metadata.size_y,
+        costmap_msg->metadata.resolution,
+        costmap_msg->metadata.origin.position.x,
+        costmap_msg->metadata.origin.position.y);
+
+    // Copy data
+    unsigned char *costmap_data = costmap_->getCharMap();
+    std::memcpy(costmap_data, costmap_msg->data.data(), costmap_msg->data.size() * sizeof(unsigned char));
+}
+
 //! Navigation goal callback.
 /*!
  * Callback for getting the 2D navigation goal
@@ -365,6 +425,15 @@ void HATEBPlanningFramework::queryGoalCallback(const geometry_msgs::msg::PoseSta
 void HATEBPlanningFramework::planWithSimpleSetup()
 {
 
+    // ======================================
+
+    hateb_local_planner::RobotFootprintModelPtr robot_model = boost::make_shared<hateb_local_planner::CircularRobotFootprint>(0.4);
+    hateb_local_planner::CircularRobotFootprintPtr agent_model = boost::make_shared<hateb_local_planner::CircularRobotFootprint>(0.4);
+
+    planner_ = hateb_local_planner::PlannerInterfacePtr(new hateb_local_planner::TebOptimalPlanner(&obstacles_, robot_model, visualization_, &via_points_, agent_model, &agents_via_points_map_));
+
+    // ++++++++++++++++++++++++++++++++++++++
+
     rclcpp::Rate loop_rate(1.0 / (timer_period_)); // 10 hz
     // goal_available_ = true;
 
@@ -431,18 +500,27 @@ uint32_t HATEBPlanningFramework::computeVelocityCommands(const geometry_msgs::ms
         }
     }
 
-    if (!stuck_)
-        stuck_agent_id_ = -1;
+    geometry_msgs::msg::PoseStamped robot_pose;
+
+    robot_pose.header.frame_id = world_frame_;
+    robot_pose.header.stamp = this->now();
+
+    robot_pose.pose.position.x = last_robot_pose_.getOrigin().x();
+    robot_pose.pose.position.y = last_robot_pose_.getOrigin().y();
+    robot_pose.pose.position.z = last_robot_pose_.getOrigin().z();
+
+    tf2::Quaternion quat = last_robot_pose_.getRotation();
+    robot_pose.pose.orientation = tf2::toMsg(quat);
 
     // prune global plan to cut off parts of the past (spatially before the robot)
-    pruneGlobalPlan(*tf_buffer_, last_robot_pose_, global_plan_, global_plan_prune_distance_);
+    pruneGlobalPlan(robot_pose, global_plan_, global_plan_prune_distance_);
 
     // Transform global plan to the frame of interest (w.r.t. the local costmap)
     hateb_local_planner::PlanCombined transformed_plan_combined;
     int goal_idx;
     // TODO: add costmap_ support from nav2 costmap
     geometry_msgs::msg::TransformStamped tf_plan_to_global;
-    if (!transformGlobalPlan(*tf_buffer_, global_plan_, robot_pose, *costmap_, world_frame_,
+    if (!transformGlobalPlan(global_plan_, robot_pose, *costmap_, world_frame_,
                              max_global_plan_lookahead_dist_,
                              transformed_plan_combined, &goal_idx, &tf_plan_to_global))
     {
@@ -452,10 +530,12 @@ uint32_t HATEBPlanningFramework::computeVelocityCommands(const geometry_msgs::ms
 
     // check if global goal is reached
     geometry_msgs::msg::PoseStamped global_goal;
+    double useless_roll, useless_pitch, yaw;
     tf2::doTransform(global_plan_.back(), global_goal, tf_plan_to_global);
-    double dx = global_goal.pose.position.x - robot_pose_.x();
-    double dy = global_goal.pose.position.y - robot_pose_.y();
-    double delta_orient = g2o::normalize_theta(tf2::getYaw(global_goal.pose.orientation) - robot_pose_.theta());
+    double dx = global_goal.pose.position.x - last_robot_pose_.getOrigin().x();
+    double dy = global_goal.pose.position.y - last_robot_pose_.getOrigin().y();
+    tf2::Matrix3x3(last_robot_pose_.getRotation()).getRPY(useless_roll, useless_pitch, yaw);
+    double delta_orient = g2o::normalize_theta(tf2::getYaw(global_goal.pose.orientation) - yaw);
     if (fabs(std::sqrt(dx * dx + dy * dy)) < xy_goal_tolerance_ && fabs(delta_orient) < yaw_goal_tolerance_ && (!complete_global_plan_ || via_points_.size() == 0) && goal_ctrl_)
     {
         goal_reached_ = true;
@@ -507,23 +587,12 @@ uint32_t HATEBPlanningFramework::computeVelocityCommands(const geometry_msgs::ms
     updateObstacleContainerWithInvHumans();
 
     // update agents
-    std::vector<AgentPlanCombined> transformed_agent_plans;
-    AgentPlanVelMap transformed_agent_plan_vel_map;
-    agents_states_pub_->publish(agents_states_);
+    std::vector<hateb_local_planner::AgentPlanCombined> transformed_agent_plans;
+    hateb_local_planner::AgentPlanVelMap transformed_agent_plan_vel_map;
 
     bool found = true;
-    if (stuck_agent_id != -1)
-    {
-        if (!visible_agent_ids_.size() > 0)
-        {
-            if (visible_agent_ids_[0] != stuck_agent_id)
-                found = false;
-        }
-        else if (visible_agent_ids_.size() == 0)
-            found = false;
-    }
 
-    if (is_dist_max || !found)
+    if (is_dist_max_ || !found)
     {
         agents_via_points_map_.clear();
 
@@ -533,8 +602,6 @@ uint32_t HATEBPlanningFramework::computeVelocityCommands(const geometry_msgs::ms
                                            global_plan_viapoint_sep_);
         }
         goal_ctrl_ = true;
-
-        break;
     }
 
     if (is_mode_ == 0)
@@ -564,7 +631,7 @@ uint32_t HATEBPlanningFramework::computeVelocityCommands(const geometry_msgs::ms
         current_hpose.header.frame_id = "static";
         current_hpose.pose = agents_[static_agents_ids[indx] - 1];
 
-        PlanStartVelGoalVel plan_start_vel_goal_vel;
+        hateb_local_planner::PlanStartVelGoalVel plan_start_vel_goal_vel;
         plan_start_vel_goal_vel.plan.push_back(current_hpose);
         plan_start_vel_goal_vel.start_vel = empty_vel;
         plan_start_vel_goal_vel.nominal_vel = 0;
@@ -578,9 +645,9 @@ uint32_t HATEBPlanningFramework::computeVelocityCommands(const geometry_msgs::ms
     {
 
         // transform agent plans
-        AgentPlanCombined agent_plan_combined;
+        hateb_local_planner::AgentPlanCombined agent_plan_combined;
         auto &transformed_vel = predicted_agents_poses.start_velocity;
-        if (!transformAgentPlan(*tf_buffer_, robot_pose, *costmap_, world_frame_,
+        if (!transformAgentPlan(robot_pose, *costmap_, world_frame_,
                                 predicted_agents_poses.poses,
                                 agent_plan_combined, transformed_vel,
                                 &tf_agent_plan_to_global))
@@ -594,10 +661,10 @@ uint32_t HATEBPlanningFramework::computeVelocityCommands(const geometry_msgs::ms
         agent_plan_combined.id = predicted_agents_poses.id;
         transformed_agent_plans.push_back(agent_plan_combined);
 
-        PlanStartVelGoalVel plan_start_vel_goal_vel;
+        hateb_local_planner::PlanStartVelGoalVel plan_start_vel_goal_vel;
         plan_start_vel_goal_vel.plan = agent_plan_combined.plan_to_optimize;
         plan_start_vel_goal_vel.start_vel = transformed_vel.twist;
-        plan_start_vel_goal_vel.nominal_vel = std::max(0.3, agent_nominal_vels[predicted_agents_poses.id - 1]);
+        plan_start_vel_goal_vel.nominal_vel = std::max(0.3, agent_nominal_vels_[predicted_agents_poses.id - 1]);
         plan_start_vel_goal_vel.is_mode_ = is_mode_;
         if (!agent_plan_combined.plan_after.size() > 0)
         {
@@ -644,7 +711,7 @@ uint32_t HATEBPlanningFramework::computeVelocityCommands(const geometry_msgs::ms
     double dt_resize = dt_ref_;
     double dt_hyst_resize = dt_hysteresis_;
 
-    bool success = planner_->plan(transformed_plan, &robot_vel_, free_goal_vel_, &transformed_agent_plan_vel_map, &op_costs, dt_resize, dt_hyst_resize, is_mode_);
+    bool success = planner_->plan(transformed_plan, &current_robot_velocity_, free_goal_vel_, &transformed_agent_plan_vel_map, &op_costs, dt_resize, dt_hyst_resize, is_mode_);
 
     if (!success)
     {
@@ -654,45 +721,33 @@ uint32_t HATEBPlanningFramework::computeVelocityCommands(const geometry_msgs::ms
         last_cmd_ = cmd_vel.twist;
     }
 
-    PlanTrajCombined plan_traj_combined;
+    hateb_local_planner::PlanTrajCombined plan_traj_combined;
     plan_traj_combined.plan_before = transformed_plan_combined.plan_before;
     planner_->getFullTrajectory(plan_traj_combined.optimized_trajectory);
     plan_traj_combined.plan_after = transformed_plan_combined.plan_after;
     visualization_->publishTrajectory(plan_traj_combined);
 
-    if (planning_mode_ == 1)
+    visualization_->publishAgentGlobalPlans(transformed_agent_plans);
+    std::vector<hateb_local_planner::AgentPlanTrajCombined> agent_plans_traj_array;
+    for (auto &agent_plan_combined : transformed_agent_plans)
     {
-        visualization_->publishAgentGlobalPlans(transformed_agent_plans);
-        std::vector<AgentPlanTrajCombined> agent_plans_traj_array;
-        for (auto &agent_plan_combined : transformed_agent_plans)
-        {
-            AgentPlanTrajCombined agent_plan_traj_combined;
-            agent_plan_traj_combined.id = agent_plan_combined.id;
-            agent_plan_traj_combined.plan_before = agent_plan_combined.plan_before;
-            planner_->getFullAgentTrajectory(
-                agent_plan_traj_combined.id,
-                agent_plan_traj_combined.optimized_trajectory);
+        hateb_local_planner::AgentPlanTrajCombined agent_plan_traj_combined;
+        agent_plan_traj_combined.id = agent_plan_combined.id;
+        agent_plan_traj_combined.plan_before = agent_plan_combined.plan_before;
+        planner_->getFullAgentTrajectory(
+            agent_plan_traj_combined.id,
+            agent_plan_traj_combined.optimized_trajectory);
 
-            agent_plan_traj_combined.plan_after = agent_plan_combined.plan_after;
-            agent_plans_traj_array.push_back(agent_plan_traj_combined);
-        }
-        visualization_->publishAgentTrajectories(agent_plans_traj_array);
+        agent_plan_traj_combined.plan_after = agent_plan_combined.plan_after;
+        agent_plans_traj_array.push_back(agent_plan_traj_combined);
     }
+    visualization_->publishAgentTrajectories(agent_plans_traj_array);
 
     double ttg = std::hypot(transformed_plan.back().pose.position.x - transformed_plan.front().pose.position.x,
                             transformed_plan.back().pose.position.y - transformed_plan.front().pose.position.y) /
-                 std::hypot(robot_vel_.linear.x, robot_vel_.linear.y);
+                 std::hypot(current_robot_velocity_.linear.x, current_robot_velocity_.linear.y);
 
-    // Check feasibility (but within the first few states only)
-    if (is_footprint_dynamic_)
-    {
-        // TODO: min and max distance would be the radius of the robot
-        // footprint_spec_ = costmap_ros_->getRobotFootprint();
-        // costmap_2d::calculateMinAndMaxDistances(footprint_spec_, robot_inscribed_radius_, robot_circumscribed_radius);
-        robot_inscribed_radius_ = 0.4;
-        robot_circumscribed_radius_ = 0.4;
-    }
-    bool feasible = planner_->isTrajectoryFeasible(costmap_model_, footprint_spec_, robot_inscribed_radius_, robot_circumscribed_radius, feasibility_check_no_poses_);
+    bool feasible = planner_->isTrajectoryFeasible(costmap_model_, footprint_spec_, robot_inscribed_radius_, robot_circumscribed_radius_, feasibility_check_no_poses_);
     if (!feasible)
     {
         cmd_vel.twist.linear.x = cmd_vel.twist.linear.y = cmd_vel.twist.angular.z = 0;
@@ -714,24 +769,8 @@ uint32_t HATEBPlanningFramework::computeVelocityCommands(const geometry_msgs::ms
 
     // Saturate velocity, if the optimization results violates the constraints (could be possible due to soft constraints).
     saturateVelocity(cmd_vel.twist.linear.x, cmd_vel.twist.linear.y, cmd_vel.twist.angular.z,
-                     robot.max_vel_x_, robot.max_vel_y_, max_vel_theta_,
+                     max_vel_x_, max_vel_y_, max_vel_theta_,
                      max_vel_x_backwards_);
-
-    // convert rot-vel to steering angle if desired (carlike robot).
-    // The min_turning_radius is allowed to be slighly smaller since it is a soft-constraint
-    // and opposed to the other constraints not affected by penalty_epsilon. The user might add a safety margin to the parameter itself.
-    if (cmd_angle_instead_rotvel_)
-    {
-        cmd_vel.twist.angular.z = convertTransRotVelToSteeringAngle(cmd_vel.twist.linear.x, cmd_vel.twist.angular.z, wheelbase_, 0.95 * min_turning_radius_);
-        if (!std::isfinite(cmd_vel.twist.angular.z))
-        {
-            cmd_vel.twist.linear.x = cmd_vel.twist.linear.y = cmd_vel.twist.angular.z = 0;
-            last_cmd_ = cmd_vel.twist;
-            planner_->clearPlanner();
-            RCLCPP_WARN(this->get_logger(), "HATebLocalPlannerROS: Resulting steering angle is not finite. Resetting planner...");
-            ++no_infeasible_plans_;
-        }
-    }
 
     // a feasible solution should be found, reset counter
     no_infeasible_plans_ = 0;
@@ -947,14 +986,14 @@ void HATEBPlanningFramework::saturateVelocity(double &vx, double &vy, double &om
 
     // slow change of direction in angular velocity
     double min_vel_theta = 0.02;
-    if (cfg_.optim.disable_rapid_omega_chage)
+    if (disable_rapid_omega_chage_)
     {
         if (std::signbit(omega) != std::signbit(last_omega_))
         {
             // signs are changed
-            auto now = ros::Time::now();
-            if ((now - last_omega_sign_change_).toSec() <
-                cfg_.optim.omega_chage_time_seperation)
+            rclcpp::Time now = this->now();
+            if ((now - last_omega_sign_change_).seconds() <
+                omega_chage_time_seperation_)
             {
                 // do not allow sign change
                 omega = std::copysign(min_vel_theta, omega);
@@ -965,8 +1004,8 @@ void HATEBPlanningFramework::saturateVelocity(double &vx, double &vy, double &om
     }
 }
 
-double HATEBPlanningFramework::estimateLocalGoalOrientation(const std::vector<geometry_msgs::PoseStamped> &global_plan, const geometry_msgs::PoseStamped &local_goal,
-                                                            int current_goal_idx, const geometry_msgs::TransformStamped &tf_plan_to_global, int moving_average_length) const
+double HATEBPlanningFramework::estimateLocalGoalOrientation(const std::vector<geometry_msgs::msg::PoseStamped> &global_plan, const geometry_msgs::msg::PoseStamped &local_goal,
+                                                            int current_goal_idx, const geometry_msgs::msg::TransformStamped &tf_plan_to_global, int moving_average_length) const
 {
     int n = (int)global_plan.size();
 
@@ -980,9 +1019,9 @@ double HATEBPlanningFramework::estimateLocalGoalOrientation(const std::vector<ge
         else
         {
             tf2::Quaternion global_orientation;
-            tf2::convert(global_plan.back().pose.orientation, global_orientation);
+            tf2::fromMsg(global_plan.back().pose.orientation, global_orientation);
             tf2::Quaternion rotation;
-            tf2::convert(tf_plan_to_global.transform.rotation, rotation);
+            tf2::fromMsg(tf_plan_to_global.transform.rotation, rotation);
             // TODO(roesmann): avoid conversion to tf2::Quaternion
             return tf2::getYaw(rotation * global_orientation);
         }
@@ -992,8 +1031,8 @@ double HATEBPlanningFramework::estimateLocalGoalOrientation(const std::vector<ge
     moving_average_length = std::min(moving_average_length, n - current_goal_idx - 1); // maybe redundant, since we have checked the vicinity of the goal before
 
     std::vector<double> candidates;
-    geometry_msgs::PoseStamped tf_pose_k = local_goal;
-    geometry_msgs::PoseStamped tf_pose_kp1;
+    geometry_msgs::msg::PoseStamped tf_pose_k = local_goal;
+    geometry_msgs::msg::PoseStamped tf_pose_kp1;
 
     int range_end = current_goal_idx + moving_average_length;
     for (int i = current_goal_idx; i < range_end; ++i)
@@ -1011,43 +1050,41 @@ double HATEBPlanningFramework::estimateLocalGoalOrientation(const std::vector<ge
     return hateb_local_planner::average_angles(candidates);
 }
 
-bool HATebLocalPlannerROS::transformAgentPlan(
-    const tf2_ros::Buffer &tf2, const geometry_msgs::PoseStamped &robot_pose,
-    const costmap_2d::Costmap2D &costmap, const std::string &global_frame,
-    const std::vector<geometry_msgs::PoseWithCovarianceStamped> &agent_plan,
-    AgentPlanCombined &transformed_agent_plan_combined,
-    geometry_msgs::TwistStamped &transformed_agent_twist,
+bool HATEBPlanningFramework::transformAgentPlan(
+    const geometry_msgs::msg::PoseStamped &robot_pose,
+    const nav2_costmap_2d::Costmap2D &costmap, const std::string &global_frame,
+    const std::vector<geometry_msgs::msg::PoseWithCovarianceStamped> &agent_plan,
+    hateb_local_planner::AgentPlanCombined &transformed_agent_plan_combined,
+    geometry_msgs::msg::TwistStamped &transformed_agent_twist,
     tf2::Stamped<tf2::Transform> *tf_agent_plan_to_global) const
 {
     try
     {
         if (agent_plan.empty())
         {
-            ROS_ERROR("Received agent plan with zero length");
+            RCLCPP_ERROR(rclcpp::get_logger("HATEBPlanningFramework"), "Received agent plan with zero length");
             return false;
         }
 
         // get agent_plan_to_global_transform from plan frame to global_frame
-        geometry_msgs::TransformStamped agent_plan_to_global_transform;
-        // tf.waitForTransform(global_frame, agent_plan.front().header.frame_id,
-        // ros::Time(0), ros::Duration(0.5));
-        agent_plan_to_global_transform = tf2.lookupTransform(global_frame, agent_plan.front().header.frame_id,
-                                                             ros::Time(0), ros::Duration(0.5));
+        geometry_msgs::msg::TransformStamped agent_plan_to_global_transform;
+        agent_plan_to_global_transform = tf_buffer_->lookupTransform(global_frame, agent_plan.front().header.frame_id,
+                                                                     tf2::TimePointZero, tf2::durationFromSec(0.5));
         tf2::Stamped<tf2::Transform> agent_plan_to_global_transform_;
         tf2::fromMsg(agent_plan_to_global_transform, agent_plan_to_global_transform_);
 
         // transform the full plan to local planning frame
-        std::vector<geometry_msgs::PoseStamped> transformed_agent_plan;
+        std::vector<geometry_msgs::msg::PoseStamped> transformed_agent_plan;
         tf2::Stamped<tf2::Transform> tf_pose_stamped;
-        geometry_msgs::PoseStamped transformed_pose;
+        geometry_msgs::msg::PoseStamped transformed_pose;
         tf2::Transform tf_pose;
         auto agent_start_pose = agent_plan[0];
         for (auto &agent_pose : agent_plan)
         {
-            if (isMode >= 1 && isMode < 3)
+            if (is_mode_ >= 1 && is_mode_ < 3)
             {
                 if (std::hypot(agent_pose.pose.pose.position.x - agent_start_pose.pose.pose.position.x,
-                               agent_pose.pose.pose.position.y - agent_start_pose.pose.pose.position.y) > (cfg_.agent.radius))
+                               agent_pose.pose.pose.position.y - agent_start_pose.pose.pose.position.y) > (agent_radius_))
                 {
                     unsigned int mx, my;
                     if (costmap_->worldToMap(agent_pose.pose.pose.position.x, agent_pose.pose.pose.position.y, mx, my))
@@ -1061,15 +1098,23 @@ bool HATebLocalPlannerROS::transformAgentPlan(
             tf_pose_stamped.setData(agent_plan_to_global_transform_ * tf_pose);
             tf_pose_stamped.stamp_ = agent_plan_to_global_transform_.stamp_;
             tf_pose_stamped.frame_id_ = global_frame;
-            tf2::toMsg(tf_pose_stamped, transformed_pose);
+
+            transformed_pose.header.stamp = agent_plan_to_global_transform.header.stamp;
+            transformed_pose.header.frame_id = tf_pose_stamped.frame_id_;
+            transformed_pose.pose.position.x = tf_pose_stamped.getOrigin().x();
+            transformed_pose.pose.position.y = tf_pose_stamped.getOrigin().y();
+            transformed_pose.pose.position.z = tf_pose_stamped.getOrigin().z();
+            transformed_pose.pose.orientation = tf2::toMsg(tf_pose_stamped.getRotation());
 
             transformed_agent_plan.push_back(transformed_pose);
         }
 
         // transform agent twist to local planning frame
-        geometry_msgs::Twist agent_to_global_twist;
-        lookupTwist(global_frame, transformed_agent_twist.header.frame_id,
-                    ros::Time(0), ros::Duration(0.5), agent_to_global_twist);
+        geometry_msgs::msg::Twist agent_to_global_twist;
+        // TODO: STORE AGENTS SPEED WITH REFERENCE TO GLOBAL
+        // lookupTwist(global_frame, transformed_agent_twist.header.frame_id,
+        // rclcpp::Time(0), rclcpp::Duration::from_seconds(0.5),
+        // agent_to_global_twist);
         transformed_agent_twist.twist.linear.x -= agent_to_global_twist.linear.x;
         transformed_agent_twist.twist.linear.y -= agent_to_global_twist.linear.y;
         transformed_agent_twist.twist.angular.z -= agent_to_global_twist.angular.z;
@@ -1113,8 +1158,6 @@ bool HATebLocalPlannerROS::transformAgentPlan(
             }
         }
 
-        // ROS_INFO("start: %d, end: %d, full: %ld", start_index, end_index,
-        // transformed_agent_plan.size());
         transformed_agent_plan_combined.plan_before.clear();
         transformed_agent_plan_combined.plan_to_optimize.clear();
         transformed_agent_plan_combined.plan_after.clear();
@@ -1137,31 +1180,16 @@ bool HATebLocalPlannerROS::transformAgentPlan(
             }
             else
             {
-                ROS_ERROR("Transform agent plan indexing error");
+                RCLCPP_ERROR(rclcpp::get_logger("HATEBPlanningFramework"), "Transform agent plan indexing error");
             }
         }
 
         if (tf_agent_plan_to_global)
             *tf_agent_plan_to_global = agent_plan_to_global_transform_;
     }
-    catch (tf::LookupException &ex)
+    catch (const tf2::TransformException &ex)
     {
-        ROS_ERROR("No Transform available Error: %s\n", ex.what());
-        return false;
-    }
-    catch (tf::ConnectivityException &ex)
-    {
-        ROS_ERROR("Connectivity Error: %s\n", ex.what());
-        return false;
-    }
-    catch (tf::ExtrapolationException &ex)
-    {
-        ROS_ERROR("Extrapolation Error: %s\n", ex.what());
-        if (agent_plan.size() > 0)
-            ROS_ERROR("Global Frame: %s Plan Frame size %d: %s\n",
-                      global_frame.c_str(), (unsigned int)agent_plan.size(),
-                      agent_plan.front().header.frame_id.c_str());
-
+        RCLCPP_ERROR(rclcpp::get_logger("HATEBPlanningFramework"), "Transform error: %s", ex.what());
         return false;
     }
 
