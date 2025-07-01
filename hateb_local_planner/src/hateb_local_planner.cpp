@@ -66,12 +66,15 @@ public:
     void queryGoalCallback(const geometry_msgs::msg::PoseStamped::SharedPtr nav_goal_msg);
     //! Callback for getting the state of the Smf base controller
     void controlActiveCallback(const std_msgs::msg::Bool::SharedPtr control_active_msg);
+    void costmapCallback(const nav2_msgs::msg::Costmap::SharedPtr msg);
     bool pruneGlobalPlan(const geometry_msgs::msg::PoseStamped &global_pose, std::vector<geometry_msgs::msg::PoseStamped> &global_plan, double dist_behind_robot);
     uint32_t computeVelocityCommands(const geometry_msgs::msg::PoseStamped &pose, const geometry_msgs::msg::TwistStamped &velocity, geometry_msgs::msg::TwistStamped &cmd_vel);
     bool transformGlobalPlan(const std::vector<geometry_msgs::msg::PoseStamped> &global_plan,
                              const geometry_msgs::msg::PoseStamped &global_pose, const nav2_costmap_2d::Costmap2D &costmap, const std::string &global_frame, double max_plan_length,
                              hateb_local_planner::PlanCombined &transformed_plan_combined, int *current_goal_idx, geometry_msgs::msg::TransformStamped *tf_plan_to_global) const;
     void saturateVelocity(double &vx, double &vy, double &omega, double max_vel_x, double max_vel_y, double max_vel_theta, double max_vel_x_backwards);
+    double estimateLocalGoalOrientation(const std::vector<geometry_msgs::PoseStamped> &global_plan, const geometry_msgs::PoseStamped &local_goal,
+                                        int current_goal_idx, const geometry_msgs::TransformStamped &tf_plan_to_global, int moving_average_length) const;
 
 private:
     // ! SUBSCRIBERS
@@ -960,6 +963,209 @@ void HATEBPlanningFramework::saturateVelocity(double &vx, double &vy, double &om
             last_omega_ = omega;
         }
     }
+}
+
+double HATEBPlanningFramework::estimateLocalGoalOrientation(const std::vector<geometry_msgs::PoseStamped> &global_plan, const geometry_msgs::PoseStamped &local_goal,
+                                                            int current_goal_idx, const geometry_msgs::TransformStamped &tf_plan_to_global, int moving_average_length) const
+{
+    int n = (int)global_plan.size();
+
+    // check if we are near the global goal already
+    if (current_goal_idx > n - moving_average_length - 2)
+    {
+        if (current_goal_idx >= n - 1) // we've exactly reached the goal
+        {
+            return tf2::getYaw(local_goal.pose.orientation);
+        }
+        else
+        {
+            tf2::Quaternion global_orientation;
+            tf2::convert(global_plan.back().pose.orientation, global_orientation);
+            tf2::Quaternion rotation;
+            tf2::convert(tf_plan_to_global.transform.rotation, rotation);
+            // TODO(roesmann): avoid conversion to tf2::Quaternion
+            return tf2::getYaw(rotation * global_orientation);
+        }
+    }
+
+    // reduce number of poses taken into account if the desired number of poses is not available
+    moving_average_length = std::min(moving_average_length, n - current_goal_idx - 1); // maybe redundant, since we have checked the vicinity of the goal before
+
+    std::vector<double> candidates;
+    geometry_msgs::PoseStamped tf_pose_k = local_goal;
+    geometry_msgs::PoseStamped tf_pose_kp1;
+
+    int range_end = current_goal_idx + moving_average_length;
+    for (int i = current_goal_idx; i < range_end; ++i)
+    {
+        // Transform pose of the global plan to the planning frame
+        tf2::doTransform(global_plan.at(i + 1), tf_pose_kp1, tf_plan_to_global);
+
+        // calculate yaw angle
+        candidates.push_back(std::atan2(tf_pose_kp1.pose.position.y - tf_pose_k.pose.position.y,
+                                        tf_pose_kp1.pose.position.x - tf_pose_k.pose.position.x));
+
+        if (i < range_end - 1)
+            tf_pose_k = tf_pose_kp1;
+    }
+    return hateb_local_planner::average_angles(candidates);
+}
+
+bool HATebLocalPlannerROS::transformAgentPlan(
+    const tf2_ros::Buffer &tf2, const geometry_msgs::PoseStamped &robot_pose,
+    const costmap_2d::Costmap2D &costmap, const std::string &global_frame,
+    const std::vector<geometry_msgs::PoseWithCovarianceStamped> &agent_plan,
+    AgentPlanCombined &transformed_agent_plan_combined,
+    geometry_msgs::TwistStamped &transformed_agent_twist,
+    tf2::Stamped<tf2::Transform> *tf_agent_plan_to_global) const
+{
+    try
+    {
+        if (agent_plan.empty())
+        {
+            ROS_ERROR("Received agent plan with zero length");
+            return false;
+        }
+
+        // get agent_plan_to_global_transform from plan frame to global_frame
+        geometry_msgs::TransformStamped agent_plan_to_global_transform;
+        // tf.waitForTransform(global_frame, agent_plan.front().header.frame_id,
+        // ros::Time(0), ros::Duration(0.5));
+        agent_plan_to_global_transform = tf2.lookupTransform(global_frame, agent_plan.front().header.frame_id,
+                                                             ros::Time(0), ros::Duration(0.5));
+        tf2::Stamped<tf2::Transform> agent_plan_to_global_transform_;
+        tf2::fromMsg(agent_plan_to_global_transform, agent_plan_to_global_transform_);
+
+        // transform the full plan to local planning frame
+        std::vector<geometry_msgs::PoseStamped> transformed_agent_plan;
+        tf2::Stamped<tf2::Transform> tf_pose_stamped;
+        geometry_msgs::PoseStamped transformed_pose;
+        tf2::Transform tf_pose;
+        auto agent_start_pose = agent_plan[0];
+        for (auto &agent_pose : agent_plan)
+        {
+            if (isMode >= 1 && isMode < 3)
+            {
+                if (std::hypot(agent_pose.pose.pose.position.x - agent_start_pose.pose.pose.position.x,
+                               agent_pose.pose.pose.position.y - agent_start_pose.pose.pose.position.y) > (cfg_.agent.radius))
+                {
+                    unsigned int mx, my;
+                    if (costmap_->worldToMap(agent_pose.pose.pose.position.x, agent_pose.pose.pose.position.y, mx, my))
+                    {
+                        if (costmap_->getCost(mx, my) >= 254)
+                            break;
+                    }
+                }
+            }
+            tf2::fromMsg(agent_pose.pose.pose, tf_pose);
+            tf_pose_stamped.setData(agent_plan_to_global_transform_ * tf_pose);
+            tf_pose_stamped.stamp_ = agent_plan_to_global_transform_.stamp_;
+            tf_pose_stamped.frame_id_ = global_frame;
+            tf2::toMsg(tf_pose_stamped, transformed_pose);
+
+            transformed_agent_plan.push_back(transformed_pose);
+        }
+
+        // transform agent twist to local planning frame
+        geometry_msgs::Twist agent_to_global_twist;
+        lookupTwist(global_frame, transformed_agent_twist.header.frame_id,
+                    ros::Time(0), ros::Duration(0.5), agent_to_global_twist);
+        transformed_agent_twist.twist.linear.x -= agent_to_global_twist.linear.x;
+        transformed_agent_twist.twist.linear.y -= agent_to_global_twist.linear.y;
+        transformed_agent_twist.twist.angular.z -= agent_to_global_twist.angular.z;
+
+        double dist_threshold =
+            std::max(costmap.getSizeInCellsX() * costmap.getResolution() / 2.0,
+                     costmap.getSizeInCellsY() * costmap.getResolution() / 2.0) *
+            2.0;
+        dist_threshold *= 0.9;
+
+        double sq_dist_threshold = dist_threshold * dist_threshold;
+        double x_diff, y_diff, sq_dist;
+
+        // get first point of agent plan within threshold distance from robot
+        int start_index = transformed_agent_plan.size(), end_index = 0;
+        for (int i = 0; i < transformed_agent_plan.size(); i++)
+        {
+            x_diff = robot_pose.pose.position.x -
+                     transformed_agent_plan[i].pose.position.x;
+            y_diff = robot_pose.pose.position.y -
+                     transformed_agent_plan[i].pose.position.y;
+            sq_dist = x_diff * x_diff + y_diff * y_diff;
+            if (sq_dist < sq_dist_threshold)
+            {
+                start_index = i;
+                break;
+            }
+        }
+        // now get last point of agent plan withing threshold distance from robot
+        for (int i = (transformed_agent_plan.size() - 1); i >= 0; i--)
+        {
+            x_diff = robot_pose.pose.position.x -
+                     transformed_agent_plan[i].pose.position.x;
+            y_diff = robot_pose.pose.position.y -
+                     transformed_agent_plan[i].pose.position.y;
+            sq_dist = x_diff * x_diff + y_diff * y_diff;
+            if (sq_dist < sq_dist_threshold)
+            {
+                end_index = i;
+                break;
+            }
+        }
+
+        // ROS_INFO("start: %d, end: %d, full: %ld", start_index, end_index,
+        // transformed_agent_plan.size());
+        transformed_agent_plan_combined.plan_before.clear();
+        transformed_agent_plan_combined.plan_to_optimize.clear();
+        transformed_agent_plan_combined.plan_after.clear();
+        for (int i = 0; i < transformed_agent_plan.size(); i++)
+        {
+            if (i < start_index)
+            {
+                transformed_agent_plan_combined.plan_before.push_back(
+                    transformed_agent_plan[i]);
+            }
+            else if (i >= start_index && i <= end_index)
+            {
+                transformed_agent_plan_combined.plan_to_optimize.push_back(
+                    transformed_agent_plan[i]);
+            }
+            else if (i > end_index)
+            {
+                transformed_agent_plan_combined.plan_after.push_back(
+                    transformed_agent_plan[i]);
+            }
+            else
+            {
+                ROS_ERROR("Transform agent plan indexing error");
+            }
+        }
+
+        if (tf_agent_plan_to_global)
+            *tf_agent_plan_to_global = agent_plan_to_global_transform_;
+    }
+    catch (tf::LookupException &ex)
+    {
+        ROS_ERROR("No Transform available Error: %s\n", ex.what());
+        return false;
+    }
+    catch (tf::ConnectivityException &ex)
+    {
+        ROS_ERROR("Connectivity Error: %s\n", ex.what());
+        return false;
+    }
+    catch (tf::ExtrapolationException &ex)
+    {
+        ROS_ERROR("Extrapolation Error: %s\n", ex.what());
+        if (agent_plan.size() > 0)
+            ROS_ERROR("Global Frame: %s Plan Frame size %d: %s\n",
+                      global_frame.c_str(), (unsigned int)agent_plan.size(),
+                      agent_plan.front().header.frame_id.c_str());
+
+        return false;
+    }
+
+    return true;
 }
 
 //! Main function
