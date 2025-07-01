@@ -82,6 +82,7 @@ public:
                             hateb_local_planner::AgentPlanCombined &transformed_agent_plan_combined,
                             geometry_msgs::msg::TwistStamped &transformed_agent_twist,
                             tf2::Stamped<tf2::Transform> *tf_agent_plan_to_global) const;
+    void updateObstacleContainerWithCostmap();
 
 private:
     // ! SUBSCRIBERS
@@ -583,8 +584,8 @@ uint32_t HATEBPlanningFramework::computeVelocityCommands(const geometry_msgs::ms
     updateObstacleContainerWithCostmap();
 
     // also consider custom obstacles (must be called after other updates, since the container is not cleared)
-    updateObstacleContainerWithCustomObstacles();
-    updateObstacleContainerWithInvHumans();
+    // updateObstacleContainerWithCustomObstacles();
+    // updateObstacleContainerWithInvHumans();
 
     // update agents
     std::vector<hateb_local_planner::AgentPlanCombined> transformed_agent_plans;
@@ -1194,6 +1195,34 @@ bool HATEBPlanningFramework::transformAgentPlan(
     }
 
     return true;
+}
+
+void HATEBPlanningFramework::updateObstacleContainerWithCostmap()
+{
+    // Add costmap obstacles if desired
+    if (cfg_.obstacles.include_costmap_obstacles)
+    {
+        Eigen::Vector2d robot_orient = robot_pose_.orientationUnitVec();
+
+        for (unsigned int i = 0; i < costmap_->getSizeInCellsX() - 1; ++i)
+        {
+            for (unsigned int j = 0; j < costmap_->getSizeInCellsY() - 1; ++j)
+            {
+                if (costmap_->getCost(i, j) == costmap_2d::LETHAL_OBSTACLE)
+                {
+                    Eigen::Vector2d obs;
+                    costmap_->mapToWorld(i, j, obs.coeffRef(0), obs.coeffRef(1));
+
+                    // check if obstacle is interesting (e.g. not far behind the robot)
+                    Eigen::Vector2d obs_dir = obs - robot_pose_.position();
+                    if (obs_dir.dot(robot_orient) < 0 && obs_dir.norm() > cfg_.obstacles.costmap_obstacles_behind_robot_dist)
+                        continue;
+
+                    obstacles_.push_back(ObstaclePtr(new PointObstacle(obs)));
+                }
+            }
+        }
+    }
 }
 
 //! Main function
