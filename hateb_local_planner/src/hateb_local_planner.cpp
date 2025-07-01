@@ -43,6 +43,8 @@
 
 #include <optimal_planner.h>
 
+#include "nav2_costmap_2d/cost_values.hpp"
+
 enum AgentState
 {
     NO_STATE,
@@ -83,6 +85,7 @@ public:
                             geometry_msgs::msg::TwistStamped &transformed_agent_twist,
                             tf2::Stamped<tf2::Transform> *tf_agent_plan_to_global) const;
     void updateObstacleContainerWithCostmap();
+    void updateAgentViaPointsContainers(const AgentPlanVelMap &transformed_agent_plan_vel_map, double min_separation);
 
 private:
     // ! SUBSCRIBERS
@@ -178,6 +181,8 @@ private:
     hateb_local_planner::PoseSE2 robot_goal_; //!< Store current robot goal
 
     double agent_radius_ = 0.4;
+    bool include_costmap_obstacles_ = true;
+    double costmap_obstacles_behind_robot_dist_ = 1.5;
 };
 
 //!  Constructor.
@@ -1200,27 +1205,90 @@ bool HATEBPlanningFramework::transformAgentPlan(
 void HATEBPlanningFramework::updateObstacleContainerWithCostmap()
 {
     // Add costmap obstacles if desired
-    if (cfg_.obstacles.include_costmap_obstacles)
+    if (include_costmap_obstacles_)
     {
-        Eigen::Vector2d robot_orient = robot_pose_.orientationUnitVec();
+        tf2::Vector3 forward = last_robot_pose_.getBasis() * tf2::Vector3(1, 0, 0);
+        Eigen::Vector2d robot_orient(forward.x(), forward.y());
+
+        Eigen::Vector2d robot_position(last_robot_pose_.getOrigin().x(),
+                                       last_robot_pose_.getOrigin().y());
 
         for (unsigned int i = 0; i < costmap_->getSizeInCellsX() - 1; ++i)
         {
             for (unsigned int j = 0; j < costmap_->getSizeInCellsY() - 1; ++j)
             {
-                if (costmap_->getCost(i, j) == costmap_2d::LETHAL_OBSTACLE)
+                if (costmap_->getCost(i, j) == nav2_costmap_2d::LETHAL_OBSTACLE)
                 {
                     Eigen::Vector2d obs;
                     costmap_->mapToWorld(i, j, obs.coeffRef(0), obs.coeffRef(1));
 
                     // check if obstacle is interesting (e.g. not far behind the robot)
-                    Eigen::Vector2d obs_dir = obs - robot_pose_.position();
-                    if (obs_dir.dot(robot_orient) < 0 && obs_dir.norm() > cfg_.obstacles.costmap_obstacles_behind_robot_dist)
+                    Eigen::Vector2d obs_dir = obs - robot_position;
+                    if (obs_dir.dot(robot_orient) < 0 && obs_dir.norm() > costmap_obstacles_behind_robot_dist_)
                         continue;
 
-                    obstacles_.push_back(ObstaclePtr(new PointObstacle(obs)));
+                    obstacles_.push_back(hateb_local_planner::ObstaclePtr(new hateb_local_planner::PointObstacle(obs)));
                 }
             }
+        }
+    }
+}
+
+void HATEBPlanningFramework::updateAgentViaPointsContainers(
+    const AgentPlanVelMap &transformed_agent_plan_vel_map,
+    double min_separation)
+{
+    if (min_separation < 0)
+        return;
+
+    // reset via-points for known agents, create via-points for new agents
+    for (auto &transformed_agent_plan_vel_kv : transformed_agent_plan_vel_map)
+    {
+        auto &agent_id = transformed_agent_plan_vel_kv.first;
+        auto &initial_agent_plan = transformed_agent_plan_vel_kv.second.plan;
+        if (initial_agent_plan.size() == 1)
+        {
+            if (initial_agent_plan[0].header.frame_id == "static")
+            {
+                return;
+            }
+        }
+
+        if (agents_via_points_map_.find(agent_id) != agents_via_points_map_.end())
+        {
+            agents_via_points_map_[agent_id].clear();
+        }
+        else
+        {
+            agents_via_points_map_[agent_id] = ViaPointContainer();
+        }
+    }
+
+    // remove agent via-points for vanished agents
+    auto itr = agents_via_points_map_.begin();
+    while (itr != agents_via_points_map_.end())
+    {
+        if (transformed_agent_plan_vel_map.count(itr->first) == 0)
+        {
+            itr = agents_via_points_map_.erase(itr);
+        }
+        else
+            ++itr;
+    }
+
+    std::size_t prev_idx;
+    for (auto &transformed_agent_plan_vel_kv : transformed_agent_plan_vel_map)
+    {
+        prev_idx = 0;
+        auto &agent_id = transformed_agent_plan_vel_kv.first;
+        auto &transformed_agent_plan = transformed_agent_plan_vel_kv.second.plan;
+        for (std::size_t i = 1; i < transformed_agent_plan.size(); ++i)
+        {
+            if (distance_points2d(transformed_agent_plan[prev_idx].pose.position, transformed_agent_plan[i].pose.position) < min_separation)
+                continue;
+            agents_via_points_map_[agent_id].push_back(Eigen::Vector2d(transformed_agent_plan[i].pose.position.x, transformed_agent_plan[i].pose.position.y));
+
+            prev_idx = i;
         }
     }
 }
