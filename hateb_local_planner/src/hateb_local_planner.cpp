@@ -39,6 +39,10 @@
 #include <nav2_msgs/msg/costmap.hpp>
 #include <cohan_msgs/msg/state_array.hpp>
 
+// pedsim msgs
+#include <pedsim_msgs/msg/agent_states.hpp>
+#include <pedsim_msgs/msg/agent_state.hpp>
+
 #include <visualization.h>
 
 #include <optimal_planner.h>
@@ -70,6 +74,7 @@ public:
     //! Callback for getting the state of the Smf base controller
     void controlActiveCallback(const std_msgs::msg::Bool::SharedPtr control_active_msg);
     void costmapCallback(const nav2_msgs::msg::Costmap::SharedPtr msg);
+    void agentsCallback(const pedsim_msgs::msg::AgentStates::SharedPtr agents_msg);
     bool pruneGlobalPlan(const geometry_msgs::msg::PoseStamped &global_pose, std::vector<geometry_msgs::msg::PoseStamped> &global_plan, double dist_behind_robot);
     uint32_t computeVelocityCommands(const geometry_msgs::msg::PoseStamped &pose, const geometry_msgs::msg::TwistStamped &velocity, geometry_msgs::msg::TwistStamped &cmd_vel);
     bool transformGlobalPlan(const std::vector<geometry_msgs::msg::PoseStamped> &global_plan,
@@ -85,7 +90,8 @@ public:
                             geometry_msgs::msg::TwistStamped &transformed_agent_twist,
                             tf2::Stamped<tf2::Transform> *tf_agent_plan_to_global) const;
     void updateObstacleContainerWithCostmap();
-    void updateAgentViaPointsContainers(const AgentPlanVelMap &transformed_agent_plan_vel_map, double min_separation);
+    void updateAgentViaPointsContainers(const hateb_local_planner::AgentPlanVelMap &transformed_agent_plan_vel_map, double min_separation);
+    void updateViaPointsContainer(const std::vector<geometry_msgs::msg::PoseStamped> &transformed_plan, double min_separation);
 
 private:
     // ! SUBSCRIBERS
@@ -422,6 +428,259 @@ void HATEBPlanningFramework::queryGoalCallback(const geometry_msgs::msg::PoseSta
     radius_msg.pose.position.y = goal_map_frame_[1];
     radius_msg.pose.position.z = 0.0;
     query_goal_radius_rviz_pub_->publish(radius_msg);
+}
+
+void HATEBPlanningFramework::agentsCallback(const cohan_msgs::TrackedAgents &tracked_agents)
+{
+
+    tracked_agents_ = tracked_agents;
+    std::vector<double> agent_dists;
+    std::vector<double> agents_behind;
+    std::vector<double> agents_radii;
+
+    geometry_msgs::TransformStamped transformStamped;
+    std::string base_link = "base_link";
+    if (ns_ != "")
+    {
+        base_link = ns_ + "/" + base_link;
+    }
+    transformStamped = tf_->lookupTransform("map", base_link, ros::Time(0), ros::Duration(0.5));
+    auto xpos = transformStamped.transform.translation.x;
+    auto ypos = transformStamped.transform.translation.y;
+    auto ryaw = tf2::getYaw(transformStamped.transform.rotation);
+    Eigen::Vector2d robot_vec(std::cos(ryaw), std::sin(ryaw));
+    std::vector<double> hum_xpos;
+    std::vector<double> hum_ypos;
+
+    int itr = 0;
+
+    for (auto &agent : tracked_agents_.agents)
+    {
+        if (agents_states_.states.size() < tracked_agents_.agents.size())
+        {
+            agents_states_.states.push_back(hateb_local_planner::AgentState::NO_STATE);
+            std::vector<double> h_vels;
+            agent_vels.push_back(h_vels);
+            agent_nominal_vels.push_back(0.0);
+            geometry_msgs::Pose h_pose;
+            agents_.push_back(h_pose);
+        }
+        for (auto &segment : agent.segments)
+        {
+            if (segment.type == DEFAULT_AGENT_SEGMENT)
+            {
+                agents_[itr] = segment.pose.pose;
+                Eigen::Vector2d rh_vec(segment.pose.pose.position.x - xpos, segment.pose.pose.position.y - ypos);
+
+                agents_behind.push_back(rh_vec.dot(robot_vec));
+                agent_dists.push_back(rh_vec.norm());
+
+                agent_vels[itr].push_back(std::hypot(segment.twist.twist.linear.x, segment.twist.twist.linear.y));
+
+                if ((abs(segment.twist.twist.linear.x) + abs(segment.twist.twist.linear.y) + abs(segment.twist.twist.angular.z)) > 0.0001)
+                {
+                    if (agents_states_.states[itr] != hateb_local_planner::AgentState::BLOCKED)
+                    {
+                        agents_states_.states[itr] = hateb_local_planner::AgentState::MOVING;
+                    }
+                }
+
+                auto n = agent_vels[itr].size();
+                float average = 0.0f;
+                if (n != 0)
+                {
+                    average = accumulate(agent_vels[itr].begin(), agent_vels[itr].end(), 0.0) / n;
+                }
+                agent_nominal_vels[itr] = average;
+
+                if (n == cfg_.agent.num_moving_avg)
+                    agent_vels[itr].erase(agent_vels[itr].begin());
+            }
+        }
+        itr++;
+    }
+    ROS_INFO_ONCE("Number of agents, %d ", (int)agent_vels.size());
+
+    agent_still.clear();
+    for (int i = 0; i < prev_tracked_agents_.agents.size(); i++)
+    {
+        for (int j = 0; j < prev_tracked_agents_.agents[i].segments.size(); j++)
+        {
+            if (prev_tracked_agents_.agents[i].segments[j].type == DEFAULT_AGENT_SEGMENT)
+            {
+                double hum_move_dist = std::hypot(tracked_agents_.agents[i].segments[j].pose.pose.position.x - prev_tracked_agents_.agents[i].segments[j].pose.pose.position.x,
+                                                  tracked_agents_.agents[i].segments[j].pose.pose.position.y - prev_tracked_agents_.agents[i].segments[j].pose.pose.position.y);
+
+                auto tm_x = tracked_agents_.agents[i].segments[j].pose.pose.position.x;
+                auto tm_y = tracked_agents_.agents[i].segments[j].pose.pose.position.y;
+
+                hum_xpos.push_back(tm_x);
+                hum_ypos.push_back(tm_y);
+                auto n_dist = std::hypot(tm_y - ypos, tm_x - xpos);
+                if (tracked_agents_.agents[i].track_id == stuck_agent_id)
+                    ang_theta = std::atan2((tm_y - ypos) / n_dist, (tm_x - xpos) / n_dist);
+
+                if (hum_move_dist < 0.0001)
+                {
+                    agent_still.push_back(true);
+                    if (agents_states_.states[i] == hateb_local_planner::AgentState::MOVING)
+                    {
+                        agents_states_.states[i] = hateb_local_planner::AgentState::STOPPED;
+                    }
+                }
+                else
+                {
+                    agent_still.push_back(false);
+                }
+            }
+        }
+    }
+    prev_tracked_agents_ = tracked_agents_;
+
+    std::vector<std::pair<double, int>> temp_dist_idx;
+    visible_agent_ids.clear();
+    isDistMax = true;
+    for (int i = 0; i < agent_dists.size(); i++)
+    {
+        auto dist = agent_dists[i];
+        current_agent_dist = agent_dists[0];
+        if (dist < 10.0 && agents_behind[i] >= 0.0)
+        {
+            isDistMax = false;
+            temp_dist_idx.push_back(std::make_pair(dist, i + 1));
+        }
+    }
+
+    if (temp_dist_idx.size() > 0)
+    {
+        std::sort(temp_dist_idx.begin(), temp_dist_idx.end());
+
+        if (agent_dists[temp_dist_idx[0].second - 1] <= 2.5)
+        {
+            isDistunderThreshold = true;
+        }
+        else
+        {
+            isDistunderThreshold = false;
+        }
+    }
+
+    if (!stuck)
+    {
+        int n = 1000;
+        if (temp_dist_idx.size() >= 5)
+            n = 100;
+        for (int it = 0; it < temp_dist_idx.size(); it++)
+        {
+            // Ray Tracing
+            double tm_x = tracked_agents_.agents[temp_dist_idx[it].second - 1].segments[0].pose.pose.position.x;
+            double tm_y = tracked_agents_.agents[temp_dist_idx[it].second - 1].segments[0].pose.pose.position.y;
+            auto Dx = (tm_x - xpos) / n;
+            auto Dy = (tm_y - ypos) / n;
+
+            // Checking using raytracing
+            bool cell_collision = false;
+            double rob_x = xpos;
+            double rob_y = ypos;
+
+            for (int j = 0; j < n; j++)
+            {
+                unsigned int mx;
+                unsigned int my;
+
+                double check_rad;
+                if ((int)tracked_agents_.agents[temp_dist_idx[it].second - 1].type == 1)
+                    check_rad = cfg_.agent.radius + 0.1;
+                else
+                    check_rad = cfg_.agent.robot_radius + 0.1;
+
+                if (sqrt((rob_x - tm_x) * (rob_x - tm_x) + (rob_y - tm_y) * (rob_y - tm_y)) <= check_rad)
+                    break;
+                if (costmap_->worldToMap(rob_x, rob_y, mx, my))
+                {
+                    auto cellcost = costmap_->getCost(mx, my);
+                    if ((int)cellcost > 200 && (int)cellcost < 255)
+                    {
+                        cell_collision = true;
+                        break;
+                    }
+                    rob_x += Dx;
+                    rob_y += Dy;
+                }
+            }
+            int hum_id = temp_dist_idx[it].second;
+
+            if (!cell_collision)
+            {
+                visible_agent_ids.push_back(hum_id);
+                if ((int)tracked_agents_.agents[hum_id - 1].type == 1)
+                    agents_radii.push_back(cfg_.agent.radius);
+                else
+                    agents_radii.push_back(cfg_.agent.robot_radius);
+
+                if (agents_states_.states[hum_id - 1] == hateb_local_planner::AgentState::NO_STATE)
+                {
+                    agents_states_.states[hum_id - 1] = hateb_local_planner::AgentState::STATIC;
+                }
+            }
+        }
+    }
+    else
+    {
+        for (int it = 0; it < 2 && it < temp_dist_idx.size(); it++)
+        {
+            if (temp_dist_idx[it].second == stuck_agent_id)
+            {
+                visible_agent_ids.push_back(temp_dist_idx[it].second);
+                if ((int)tracked_agents_.agents[temp_dist_idx[it].second - 1].type == 1)
+                    agents_radii.push_back(cfg_.agent.radius);
+                else
+                    agents_radii.push_back(cfg_.agent.robot_radius);
+                break;
+            }
+        }
+    }
+
+    // Safety step for agents if agent_layers is not added in local costmap
+    // Adds a temporary costmap around the agents to let planner plan safe trajectories
+
+    if (cfg_.planning_mode > 0)
+    {
+        for (int i = 0; i < visible_agent_ids.size() && i < hum_xpos.size(); i++)
+        {
+            geometry_msgs::Point v1, v2, v3, v4;
+            auto idx = visible_agent_ids[i] - 1;
+            auto agent_radius = agents_radii[idx];
+            v1.x = hum_xpos[idx] - agent_radius, v1.y = hum_ypos[idx] - agent_radius, v1.z = 0.0;
+            v2.x = hum_xpos[idx] - agent_radius, v2.y = hum_ypos[idx] + agent_radius, v2.z = 0.0;
+            v3.x = hum_xpos[idx] + agent_radius, v3.y = hum_ypos[idx] + agent_radius, v3.z = 0.0;
+            v4.x = hum_xpos[idx] + agent_radius, v4.y = hum_ypos[idx] - agent_radius, v4.z = 0.0;
+
+            std::vector<geometry_msgs::Point> agent_pos_costmap;
+
+            if (cfg_.robot.is_real)
+            {
+                transformStamped = tf_->lookupTransform("odom_combined", "map", ros::Time(0), ros::Duration(0.5));
+                tf2::doTransform(v1, v1, transformStamped);
+                tf2::doTransform(v2, v2, transformStamped);
+                tf2::doTransform(v3, v3, transformStamped);
+                tf2::doTransform(v4, v4, transformStamped);
+            }
+
+            agent_pos_costmap.push_back(v1);
+            agent_pos_costmap.push_back(v2);
+            agent_pos_costmap.push_back(v3);
+            agent_pos_costmap.push_back(v4);
+
+            // if(!agent_prev_pos_costmap.empty()){
+            //   costmap_->setConvexPolygonCost(agent_prev_pos_costmap[idx+1], 0.0);
+            // }
+            // agent_prev_pos_costmap[idx+1] = agent_pos_costmap;
+
+            bool set_success = false;
+            set_success = costmap_->setConvexPolygonCost(agent_pos_costmap, 255.0);
+        }
+    }
 }
 
 //!  Planner setup.
@@ -1235,7 +1494,7 @@ void HATEBPlanningFramework::updateObstacleContainerWithCostmap()
 }
 
 void HATEBPlanningFramework::updateAgentViaPointsContainers(
-    const AgentPlanVelMap &transformed_agent_plan_vel_map,
+    const hateb_local_planner::AgentPlanVelMap &transformed_agent_plan_vel_map,
     double min_separation)
 {
     if (min_separation < 0)
@@ -1260,7 +1519,7 @@ void HATEBPlanningFramework::updateAgentViaPointsContainers(
         }
         else
         {
-            agents_via_points_map_[agent_id] = ViaPointContainer();
+            agents_via_points_map_[agent_id] = hateb_local_planner::ViaPointContainer();
         }
     }
 
@@ -1284,12 +1543,32 @@ void HATEBPlanningFramework::updateAgentViaPointsContainers(
         auto &transformed_agent_plan = transformed_agent_plan_vel_kv.second.plan;
         for (std::size_t i = 1; i < transformed_agent_plan.size(); ++i)
         {
-            if (distance_points2d(transformed_agent_plan[prev_idx].pose.position, transformed_agent_plan[i].pose.position) < min_separation)
+            if (hateb_local_planner::distance_points2d(transformed_agent_plan[prev_idx].pose.position, transformed_agent_plan[i].pose.position) < min_separation)
                 continue;
             agents_via_points_map_[agent_id].push_back(Eigen::Vector2d(transformed_agent_plan[i].pose.position.x, transformed_agent_plan[i].pose.position.y));
 
             prev_idx = i;
         }
+    }
+}
+
+void HATEBPlanningFramework::updateViaPointsContainer(const std::vector<geometry_msgs::msg::PoseStamped> &transformed_plan, double min_separation)
+{
+    via_points_.clear();
+
+    if (min_separation <= 0)
+        return;
+
+    std::size_t prev_idx = 0;
+    for (std::size_t i = 1; i < transformed_plan.size(); ++i) // skip first one, since we do not need any point before the first min_separation [m]
+    {
+        // check separation to the previous via-point inserted
+        if (hateb_local_planner::distance_points2d(transformed_plan[prev_idx].pose.position, transformed_plan[i].pose.position) < min_separation)
+            continue;
+
+        // add via-point
+        via_points_.push_back(Eigen::Vector2d(transformed_plan[i].pose.position.x, transformed_plan[i].pose.position.y));
+        prev_idx = i;
     }
 }
 
