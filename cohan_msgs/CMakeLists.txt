@@ -17,6 +17,7 @@ find_package(visualization_msgs REQUIRED)
 find_package(costmap_converter REQUIRED)
 find_package(costmap_converter REQUIRED)
 find_package(rosidl_default_generators REQUIRED)
+find_package(pedsim_msgs REQUIRED)
 
 # Add message files
 set(msg_files
@@ -44,6 +45,9 @@ set(msg_files
   "msg/OptimizationCost.msg"
   "msg/OptimizationCostArray.msg"
   "msg/FeedbackMsg.msg"
+  "msg/PoseWith2DCovariance.msg"
+  "msg/AgentStatePrediction.msg"
+  "msg/AgentStatesPrediction.msg"
   "srv/Approach.srv"
   "srv/Optimize.srv"
   "srv/GetPlanning.srv"
@@ -54,7 +58,7 @@ set(msg_files
 # Message generation
 rosidl_generate_interfaces(${PROJECT_NAME}
   ${msg_files}
-  DEPENDENCIES geometry_msgs nav_msgs std_msgs costmap_converter costmap_converter_msgs
+  DEPENDENCIES geometry_msgs nav_msgs std_msgs pedsim_msgs costmap_converter costmap_converter_msgs
 )
 
 # Export dependencies to downstream packages

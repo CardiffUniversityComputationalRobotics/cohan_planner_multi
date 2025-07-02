@@ -49,6 +49,10 @@
 
 #include "nav2_costmap_2d/cost_values.hpp"
 
+#include <cohan_msgs/msg/agent_states_prediction.hpp>
+
+#define DEFAULT_AGENT_SEGMENT cohan_msgs::msg::TrackedSegmentType::TORSO
+
 enum AgentState
 {
     NO_STATE,
@@ -74,7 +78,8 @@ public:
     //! Callback for getting the state of the Smf base controller
     void controlActiveCallback(const std_msgs::msg::Bool::SharedPtr control_active_msg);
     void costmapCallback(const nav2_msgs::msg::Costmap::SharedPtr msg);
-    void agentsCallback(const pedsim_msgs::msg::AgentStates::SharedPtr agents_msg);
+    void agentsCallback(const pedsim_msgs::msg::AgentStates::SharedPtr agent_states_msg);
+    void agentStatesPredictionCallback(const tidup_move_base_msgs::msg::AgentStatesPrediction::SharedPtr agent_states_msg);
     bool pruneGlobalPlan(const geometry_msgs::msg::PoseStamped &global_pose, std::vector<geometry_msgs::msg::PoseStamped> &global_plan, double dist_behind_robot);
     uint32_t computeVelocityCommands(const geometry_msgs::msg::PoseStamped &pose, const geometry_msgs::msg::TwistStamped &velocity, geometry_msgs::msg::TwistStamped &cmd_vel);
     bool transformGlobalPlan(const std::vector<geometry_msgs::msg::PoseStamped> &global_plan,
@@ -99,6 +104,7 @@ private:
     rclcpp::Subscription<geometry_msgs::msg::PoseStamped>::SharedPtr nav_goal_sub_;
     rclcpp::Subscription<std_msgs::msg::Bool>::SharedPtr control_active_sub_;
     rclcpp::Subscription<nav2_msgs::msg::Costmap>::SharedPtr costmap_sub_;
+    rclcpp::Subscription<tidup_move_base_msgs::msg::AgentStatesPrediction>::SharedPtr agent_states_prediction_sub_;
 
     // ! PUBLISHERS
     rclcpp::Publisher<std_msgs::msg::Bool>::SharedPtr goal_reached_pub_;
@@ -124,7 +130,8 @@ private:
     // configs params
     double pose_prediction_reset_time_ = 0.1;
     bool initialized_, reset_states_, goal_reached_;
-    cohan_msgs::msg::StateArray agents_states_; // State of agents
+    cohan_msgs::msg::StateArray agents_states_;                           // State of agents
+    cohan_msgs::msg::TrackedAgents tracked_agents_, prev_tracked_agents_; // Tracked agents from an external module
 
     rclcpp::Time last_position_time_;
 
@@ -189,6 +196,13 @@ private:
     double agent_radius_ = 0.4;
     bool include_costmap_obstacles_ = true;
     double costmap_obstacles_behind_robot_dist_ = 1.5;
+    std::vector<std::vector<double>> agent_vels_; // List of agent velocities over time
+
+    int num_moving_avg_ = 5;
+
+    int stuck_agent_id_; // Stores the agent id who blocked the robot's way during backoff recovery
+    double ang_theta_;   // Re-orientation angle
+    double current_agent_dist_;
 };
 
 //!  Constructor.
@@ -430,24 +444,45 @@ void HATEBPlanningFramework::queryGoalCallback(const geometry_msgs::msg::PoseSta
     query_goal_radius_rviz_pub_->publish(radius_msg);
 }
 
-void HATEBPlanningFramework::agentsCallback(const cohan_msgs::TrackedAgents &tracked_agents)
+void HATEBPlanningFramework::agentsCallback(const pedsim_msgs::msg::AgentStates::SharedPtr agent_states_msg)
 {
 
-    tracked_agents_ = tracked_agents;
+    cohan_msgs::msg::TrackedAgents converted_tracked_agents;
+    converted_tracked_agents.header.stamp = agent_states_msg->header.stamp;
+    converted_tracked_agents.header.frame_id = agent_states_msg->header.frame_id;
+
+    for (const auto &agent : agent_states_msg->agent_states)
+    {
+        cohan_msgs::msg::TrackedAgent tracked_agent;
+        tracked_agent.track_id = agent.id;
+        tracked_agent.name = agent.type;
+        tracked_agent.type = 1;
+        tracked_agent.state = cohan_msgs::msg::TrackedAgent::MOVING;
+
+        // Segment conversion
+        cohan_msgs::msg::TrackedSegment segment;
+        segment.type = 0; // DEFAULT_AGENT_SEGMENT
+        segment.pose.pose.position = agent.pose.position;
+        segment.pose.pose.orientation = agent.pose.orientation;
+        segment.twist.twist.linear = agent.twist.linear;
+        segment.twist.twist.angular.z = 0.0;
+
+        tracked_agent.segments.push_back(segment);
+        converted_tracked_agents.agents.push_back(tracked_agent);
+    }
+
+    tracked_agents_ = converted_tracked_agents;
+
     std::vector<double> agent_dists;
     std::vector<double> agents_behind;
     std::vector<double> agents_radii;
+    geometry_msgs::msg::TransformStamped transformed_stamped;
+    std::string base_link = base_link;
 
-    geometry_msgs::TransformStamped transformStamped;
-    std::string base_link = "base_link";
-    if (ns_ != "")
-    {
-        base_link = ns_ + "/" + base_link;
-    }
-    transformStamped = tf_->lookupTransform("map", base_link, ros::Time(0), ros::Duration(0.5));
-    auto xpos = transformStamped.transform.translation.x;
-    auto ypos = transformStamped.transform.translation.y;
-    auto ryaw = tf2::getYaw(transformStamped.transform.rotation);
+    transformed_stamped = tf_buffer_->lookupTransform("map", base_link, tf2::TimePointZero, tf2::durationFromSec(0.5));
+    auto xpos = transformed_stamped.transform.translation.x;
+    auto ypos = transformed_stamped.transform.translation.y;
+    auto ryaw = tf2::getYaw(transformed_stamped.transform.rotation);
     Eigen::Vector2d robot_vec(std::cos(ryaw), std::sin(ryaw));
     std::vector<double> hum_xpos;
     std::vector<double> hum_ypos;
@@ -458,11 +493,11 @@ void HATEBPlanningFramework::agentsCallback(const cohan_msgs::TrackedAgents &tra
     {
         if (agents_states_.states.size() < tracked_agents_.agents.size())
         {
-            agents_states_.states.push_back(hateb_local_planner::AgentState::NO_STATE);
+            agents_states_.states.push_back(AgentState::NO_STATE);
             std::vector<double> h_vels;
-            agent_vels.push_back(h_vels);
-            agent_nominal_vels.push_back(0.0);
-            geometry_msgs::Pose h_pose;
+            agent_vels_.push_back(h_vels);
+            agent_nominal_vels_.push_back(0.0);
+            geometry_msgs::msg::Pose h_pose;
             agents_.push_back(h_pose);
         }
         for (auto &segment : agent.segments)
@@ -475,33 +510,33 @@ void HATEBPlanningFramework::agentsCallback(const cohan_msgs::TrackedAgents &tra
                 agents_behind.push_back(rh_vec.dot(robot_vec));
                 agent_dists.push_back(rh_vec.norm());
 
-                agent_vels[itr].push_back(std::hypot(segment.twist.twist.linear.x, segment.twist.twist.linear.y));
+                agent_vels_[itr].push_back(std::hypot(segment.twist.twist.linear.x, segment.twist.twist.linear.y));
 
                 if ((abs(segment.twist.twist.linear.x) + abs(segment.twist.twist.linear.y) + abs(segment.twist.twist.angular.z)) > 0.0001)
                 {
-                    if (agents_states_.states[itr] != hateb_local_planner::AgentState::BLOCKED)
+                    if (agents_states_.states[itr] != AgentState::BLOCKED)
                     {
-                        agents_states_.states[itr] = hateb_local_planner::AgentState::MOVING;
+                        agents_states_.states[itr] = AgentState::MOVING;
                     }
                 }
 
-                auto n = agent_vels[itr].size();
+                auto n = agent_vels_[itr].size();
                 float average = 0.0f;
                 if (n != 0)
                 {
-                    average = accumulate(agent_vels[itr].begin(), agent_vels[itr].end(), 0.0) / n;
+                    average = accumulate(agent_vels_[itr].begin(), agent_vels_[itr].end(), 0.0) / n;
                 }
-                agent_nominal_vels[itr] = average;
+                agent_nominal_vels_[itr] = average;
 
-                if (n == cfg_.agent.num_moving_avg)
-                    agent_vels[itr].erase(agent_vels[itr].begin());
+                if (n == num_moving_avg_)
+                    agent_vels_[itr].erase(agent_vels_[itr].begin());
             }
         }
         itr++;
     }
-    ROS_INFO_ONCE("Number of agents, %d ", (int)agent_vels.size());
+    RCLCPP_INFO_ONCE(this->get_logger(), "Number of agents: %zu", agent_vels_.size());
 
-    agent_still.clear();
+    agent_still_.clear();
     for (int i = 0; i < prev_tracked_agents_.agents.size(); i++)
     {
         for (int j = 0; j < prev_tracked_agents_.agents[i].segments.size(); j++)
@@ -517,20 +552,20 @@ void HATEBPlanningFramework::agentsCallback(const cohan_msgs::TrackedAgents &tra
                 hum_xpos.push_back(tm_x);
                 hum_ypos.push_back(tm_y);
                 auto n_dist = std::hypot(tm_y - ypos, tm_x - xpos);
-                if (tracked_agents_.agents[i].track_id == stuck_agent_id)
-                    ang_theta = std::atan2((tm_y - ypos) / n_dist, (tm_x - xpos) / n_dist);
+                if (tracked_agents_.agents[i].track_id == stuck_agent_id_)
+                    ang_theta_ = std::atan2((tm_y - ypos) / n_dist, (tm_x - xpos) / n_dist);
 
                 if (hum_move_dist < 0.0001)
                 {
-                    agent_still.push_back(true);
-                    if (agents_states_.states[i] == hateb_local_planner::AgentState::MOVING)
+                    agent_still_.push_back(true);
+                    if (agents_states_.states[i] == AgentState::MOVING)
                     {
-                        agents_states_.states[i] = hateb_local_planner::AgentState::STOPPED;
+                        agents_states_.states[i] = AgentState::STOPPED;
                     }
                 }
                 else
                 {
-                    agent_still.push_back(false);
+                    agent_still_.push_back(false);
                 }
             }
         }
@@ -538,15 +573,15 @@ void HATEBPlanningFramework::agentsCallback(const cohan_msgs::TrackedAgents &tra
     prev_tracked_agents_ = tracked_agents_;
 
     std::vector<std::pair<double, int>> temp_dist_idx;
-    visible_agent_ids.clear();
-    isDistMax = true;
+    visible_agent_ids_.clear();
+    is_dist_max_ = true;
     for (int i = 0; i < agent_dists.size(); i++)
     {
         auto dist = agent_dists[i];
-        current_agent_dist = agent_dists[0];
+        current_agent_dist_ = agent_dists[0];
         if (dist < 10.0 && agents_behind[i] >= 0.0)
         {
-            isDistMax = false;
+            is_dist_max_ = false;
             temp_dist_idx.push_back(std::make_pair(dist, i + 1));
         }
     }
@@ -557,86 +592,68 @@ void HATEBPlanningFramework::agentsCallback(const cohan_msgs::TrackedAgents &tra
 
         if (agent_dists[temp_dist_idx[0].second - 1] <= 2.5)
         {
-            isDistunderThreshold = true;
+            is_dist_under_threshold_ = true;
         }
         else
         {
-            isDistunderThreshold = false;
+            is_dist_under_threshold_ = false;
         }
     }
 
-    if (!stuck)
+    int n = 1000;
+    if (temp_dist_idx.size() >= 5)
+        n = 100;
+    for (int it = 0; it < temp_dist_idx.size(); it++)
     {
-        int n = 1000;
-        if (temp_dist_idx.size() >= 5)
-            n = 100;
-        for (int it = 0; it < temp_dist_idx.size(); it++)
+        // Ray Tracing
+        double tm_x = tracked_agents_.agents[temp_dist_idx[it].second - 1].segments[0].pose.pose.position.x;
+        double tm_y = tracked_agents_.agents[temp_dist_idx[it].second - 1].segments[0].pose.pose.position.y;
+        auto Dx = (tm_x - xpos) / n;
+        auto Dy = (tm_y - ypos) / n;
+
+        // Checking using raytracing
+        bool cell_collision = false;
+        double rob_x = xpos;
+        double rob_y = ypos;
+
+        for (int j = 0; j < n; j++)
         {
-            // Ray Tracing
-            double tm_x = tracked_agents_.agents[temp_dist_idx[it].second - 1].segments[0].pose.pose.position.x;
-            double tm_y = tracked_agents_.agents[temp_dist_idx[it].second - 1].segments[0].pose.pose.position.y;
-            auto Dx = (tm_x - xpos) / n;
-            auto Dy = (tm_y - ypos) / n;
+            unsigned int mx;
+            unsigned int my;
 
-            // Checking using raytracing
-            bool cell_collision = false;
-            double rob_x = xpos;
-            double rob_y = ypos;
+            double check_rad;
+            if ((int)tracked_agents_.agents[temp_dist_idx[it].second - 1].type == 1)
+                check_rad = agent_radius_ + 0.1;
+            else
+                check_rad = robot_base_radius_ + 0.1;
 
-            for (int j = 0; j < n; j++)
-            {
-                unsigned int mx;
-                unsigned int my;
-
-                double check_rad;
-                if ((int)tracked_agents_.agents[temp_dist_idx[it].second - 1].type == 1)
-                    check_rad = cfg_.agent.radius + 0.1;
-                else
-                    check_rad = cfg_.agent.robot_radius + 0.1;
-
-                if (sqrt((rob_x - tm_x) * (rob_x - tm_x) + (rob_y - tm_y) * (rob_y - tm_y)) <= check_rad)
-                    break;
-                if (costmap_->worldToMap(rob_x, rob_y, mx, my))
-                {
-                    auto cellcost = costmap_->getCost(mx, my);
-                    if ((int)cellcost > 200 && (int)cellcost < 255)
-                    {
-                        cell_collision = true;
-                        break;
-                    }
-                    rob_x += Dx;
-                    rob_y += Dy;
-                }
-            }
-            int hum_id = temp_dist_idx[it].second;
-
-            if (!cell_collision)
-            {
-                visible_agent_ids.push_back(hum_id);
-                if ((int)tracked_agents_.agents[hum_id - 1].type == 1)
-                    agents_radii.push_back(cfg_.agent.radius);
-                else
-                    agents_radii.push_back(cfg_.agent.robot_radius);
-
-                if (agents_states_.states[hum_id - 1] == hateb_local_planner::AgentState::NO_STATE)
-                {
-                    agents_states_.states[hum_id - 1] = hateb_local_planner::AgentState::STATIC;
-                }
-            }
-        }
-    }
-    else
-    {
-        for (int it = 0; it < 2 && it < temp_dist_idx.size(); it++)
-        {
-            if (temp_dist_idx[it].second == stuck_agent_id)
-            {
-                visible_agent_ids.push_back(temp_dist_idx[it].second);
-                if ((int)tracked_agents_.agents[temp_dist_idx[it].second - 1].type == 1)
-                    agents_radii.push_back(cfg_.agent.radius);
-                else
-                    agents_radii.push_back(cfg_.agent.robot_radius);
+            if (sqrt((rob_x - tm_x) * (rob_x - tm_x) + (rob_y - tm_y) * (rob_y - tm_y)) <= check_rad)
                 break;
+            if (costmap_->worldToMap(rob_x, rob_y, mx, my))
+            {
+                auto cellcost = costmap_->getCost(mx, my);
+                if ((int)cellcost > 200 && (int)cellcost < 255)
+                {
+                    cell_collision = true;
+                    break;
+                }
+                rob_x += Dx;
+                rob_y += Dy;
+            }
+        }
+        int hum_id = temp_dist_idx[it].second;
+
+        if (!cell_collision)
+        {
+            visible_agent_ids_.push_back(hum_id);
+            if ((int)tracked_agents_.agents[hum_id - 1].type == 1)
+                agents_radii.push_back(agent_radius_);
+            else
+                agents_radii.push_back(robot_base_radius_);
+
+            if (agents_states_.states[hum_id - 1] == AgentState::NO_STATE)
+            {
+                agents_states_.states[hum_id - 1] = AgentState::STATIC;
             }
         }
     }
@@ -644,41 +661,50 @@ void HATEBPlanningFramework::agentsCallback(const cohan_msgs::TrackedAgents &tra
     // Safety step for agents if agent_layers is not added in local costmap
     // Adds a temporary costmap around the agents to let planner plan safe trajectories
 
-    if (cfg_.planning_mode > 0)
+    for (int i = 0; i < visible_agent_ids_.size() && i < hum_xpos.size(); i++)
     {
-        for (int i = 0; i < visible_agent_ids.size() && i < hum_xpos.size(); i++)
+        geometry_msgs::msg::Point v1, v2, v3, v4;
+        auto idx = visible_agent_ids_[i] - 1;
+        auto agent_radius = agents_radii[idx];
+        v1.x = hum_xpos[idx] - agent_radius, v1.y = hum_ypos[idx] - agent_radius, v1.z = 0.0;
+        v2.x = hum_xpos[idx] - agent_radius, v2.y = hum_ypos[idx] + agent_radius, v2.z = 0.0;
+        v3.x = hum_xpos[idx] + agent_radius, v3.y = hum_ypos[idx] + agent_radius, v3.z = 0.0;
+        v4.x = hum_xpos[idx] + agent_radius, v4.y = hum_ypos[idx] - agent_radius, v4.z = 0.0;
+
+        std::vector<geometry_msgs::msg::Point> agent_pos_costmap;
+
+        agent_pos_costmap.push_back(v1);
+        agent_pos_costmap.push_back(v2);
+        agent_pos_costmap.push_back(v3);
+        agent_pos_costmap.push_back(v4);
+
+        // if(!agent_prev_pos_costmap.empty()){
+        //   costmap_->setConvexPolygonCost(agent_prev_pos_costmap[idx+1], 0.0);
+        // }
+        // agent_prev_pos_costmap[idx+1] = agent_pos_costmap;
+
+        bool set_success = false;
+        set_success = costmap_->setConvexPolygonCost(agent_pos_costmap, 255.0);
+    }
+}
+
+void HATEBPlanningFramework::agentStatesPredictionCallback(const tidup_move_base_msgs::msg::AgentStatesPrediction::SharedPtr agent_states_msg)
+{
+    agent_states_prediction_.clear();
+    agent_states_prediction_ = agent_states_msg->agent_states_prediction;
+    rclcpp::Time init_msg_time(agent_states_prediction_[0].agent_state.header.stamp);
+    for (auto &agent : agent_states_prediction_)
+    {
+        for (int i = 0; i < agent.predicted_poses.size(); i++)
         {
-            geometry_msgs::Point v1, v2, v3, v4;
-            auto idx = visible_agent_ids[i] - 1;
-            auto agent_radius = agents_radii[idx];
-            v1.x = hum_xpos[idx] - agent_radius, v1.y = hum_ypos[idx] - agent_radius, v1.z = 0.0;
-            v2.x = hum_xpos[idx] - agent_radius, v2.y = hum_ypos[idx] + agent_radius, v2.z = 0.0;
-            v3.x = hum_xpos[idx] + agent_radius, v3.y = hum_ypos[idx] + agent_radius, v3.z = 0.0;
-            v4.x = hum_xpos[idx] + agent_radius, v4.y = hum_ypos[idx] - agent_radius, v4.z = 0.0;
+            rclcpp::Time current_pose_time(agent.predicted_poses[i].header.stamp);
+            rclcpp::Duration delta = current_pose_time - init_msg_time;
 
-            std::vector<geometry_msgs::Point> agent_pos_costmap;
+            builtin_interfaces::msg::Time new_stamp;
+            new_stamp.sec = static_cast<int32_t>(delta.seconds());
+            new_stamp.nanosec = static_cast<uint32_t>(delta.nanoseconds() % 1000000000L);
 
-            if (cfg_.robot.is_real)
-            {
-                transformStamped = tf_->lookupTransform("odom_combined", "map", ros::Time(0), ros::Duration(0.5));
-                tf2::doTransform(v1, v1, transformStamped);
-                tf2::doTransform(v2, v2, transformStamped);
-                tf2::doTransform(v3, v3, transformStamped);
-                tf2::doTransform(v4, v4, transformStamped);
-            }
-
-            agent_pos_costmap.push_back(v1);
-            agent_pos_costmap.push_back(v2);
-            agent_pos_costmap.push_back(v3);
-            agent_pos_costmap.push_back(v4);
-
-            // if(!agent_prev_pos_costmap.empty()){
-            //   costmap_->setConvexPolygonCost(agent_prev_pos_costmap[idx+1], 0.0);
-            // }
-            // agent_prev_pos_costmap[idx+1] = agent_pos_costmap;
-
-            bool set_success = false;
-            set_success = costmap_->setConvexPolygonCost(agent_pos_costmap, 255.0);
+            agent.predicted_poses[i].header.stamp = new_stamp;
         }
     }
 }
