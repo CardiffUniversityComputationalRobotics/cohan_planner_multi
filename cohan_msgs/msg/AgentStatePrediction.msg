@@ -1,0 +1,2 @@
+pedsim_msgs/AgentState agent_state
+cohan_msgs/PoseWith2DCovariance[] predicted_poses
