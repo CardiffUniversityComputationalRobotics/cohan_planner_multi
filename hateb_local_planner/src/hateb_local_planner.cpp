@@ -83,6 +83,7 @@ public:
     void costmapCallback(const nav2_msgs::msg::Costmap::SharedPtr msg);
     void agentsCallback(const pedsim_msgs::msg::AgentStates::SharedPtr agent_states_msg);
     void agentStatesPredictionCallback(const cohan_msgs::msg::AgentStatesPrediction::SharedPtr agent_states_msg);
+    void globalPlanCallback(const nav_msgs::msg::Path::SharedPtr path_msg);
     bool pruneGlobalPlan(const geometry_msgs::msg::PoseStamped &global_pose, std::vector<geometry_msgs::msg::PoseStamped> &global_plan, double dist_behind_robot);
     uint32_t computeVelocityCommands(const geometry_msgs::msg::PoseStamped &pose, const geometry_msgs::msg::TwistStamped &velocity, geometry_msgs::msg::TwistStamped &cmd_vel);
     bool transformGlobalPlan(const std::vector<geometry_msgs::msg::PoseStamped> &global_plan,
@@ -108,6 +109,7 @@ private:
     rclcpp::Subscription<std_msgs::msg::Bool>::SharedPtr control_active_sub_;
     rclcpp::Subscription<nav2_msgs::msg::Costmap>::SharedPtr costmap_sub_;
     rclcpp::Subscription<cohan_msgs::msg::AgentStatesPrediction>::SharedPtr agent_states_prediction_sub_;
+    rclcpp::Subscription<nav_msgs::msg::Path>::SharedPtr global_plan_sub_;
 
     // ! PUBLISHERS
     rclcpp::Publisher<std_msgs::msg::Bool>::SharedPtr goal_reached_pub_;
@@ -272,6 +274,8 @@ HATEBPlanningFramework::HATEBPlanningFramework()
     // Controller active flag
     // control_active_sub_ = this->create_subscription<std_msgs::msg::Bool>(control_active_topic_, 1, std::bind(&OnlinePlannFramework::controlActiveCallback, this, std::placeholders::_1));
 
+    global_plan_sub_ = this->create_subscription<nav_msgs::msg::Path>("/plan", 1, std::bind(&HATEBPlanningFramework::globalPlanCallback, this, std::placeholders::_1));
+
     costmap_sub_ = this->create_subscription<nav2_msgs::msg::Costmap>("/local_costmap/costmap_raw", 1, std::bind(&HATEBPlanningFramework::costmapCallback, this, std::placeholders::_1));
 
     //=======================================================================
@@ -355,6 +359,16 @@ void HATEBPlanningFramework::odomCallback(const nav_msgs::msg::Odometry::SharedP
 
     current_robot_velocity_ = odom_msg->twist.twist;
     odom_data_ = odom_msg;
+}
+
+void HATEBPlanningFramework::globalPlanCallback(const nav_msgs::msg::Path::SharedPtr path_msg)
+{
+
+    // Example: print first pose if available
+    if (!path_msg->poses.empty())
+    {
+        global_plan_ = path_msg->poses;
+    }
 }
 
 //! Control active callback.
