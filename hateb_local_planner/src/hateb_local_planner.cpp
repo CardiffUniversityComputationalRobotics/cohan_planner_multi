@@ -1367,7 +1367,7 @@ bool HATEBPlanningFramework::transformAgentPlan(
     {
         if (agent_plan.empty())
         {
-            RCLCPP_ERROR(rclcpp::get_logger("HATEBPlanningFramework"), "Received agent plan with zero length");
+            RCLCPP_ERROR(this->get_logger(), "Received agent plan with zero length");
             return false;
         }
 
@@ -1482,7 +1482,7 @@ bool HATEBPlanningFramework::transformAgentPlan(
             }
             else
             {
-                RCLCPP_ERROR(rclcpp::get_logger("HATEBPlanningFramework"), "Transform agent plan indexing error");
+                RCLCPP_ERROR(this->get_logger(), "Transform agent plan indexing error");
             }
         }
 
@@ -1491,7 +1491,7 @@ bool HATEBPlanningFramework::transformAgentPlan(
     }
     catch (const tf2::TransformException &ex)
     {
-        RCLCPP_ERROR(rclcpp::get_logger("HATEBPlanningFramework"), "Transform error: %s", ex.what());
+        RCLCPP_ERROR(this->get_logger(), "Transform error: %s", ex.what());
         return false;
     }
 
