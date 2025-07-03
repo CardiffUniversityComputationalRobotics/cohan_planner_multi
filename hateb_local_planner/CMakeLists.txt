@@ -20,6 +20,7 @@ find_package(tf2_geometry_msgs REQUIRED)
 find_package(geometry_msgs REQUIRED)
 find_package(nav_msgs REQUIRED)
 find_package(nav2_msgs REQUIRED)
+find_package(nav2_costmap_2d REQUIRED)
 find_package(pedsim_msgs REQUIRED)
 find_package(std_msgs REQUIRED)
 find_package(std_srvs REQUIRED)
@@ -78,6 +79,7 @@ set(dependencies
   # agent_path_prediction
   costmap_converter
   pedsim_msgs
+  nav2_costmap_2d
 )
 
 # External libraries
