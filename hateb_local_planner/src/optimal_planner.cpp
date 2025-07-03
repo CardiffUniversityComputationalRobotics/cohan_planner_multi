@@ -2709,13 +2709,13 @@ namespace hateb_local_planner
     }
     return;
   }
-  bool TebOptimalPlanner::isTrajectoryFeasible(nav2_costmap_2d::Costmap2D *costmap_model, const std::vector<geometry_msgs::msg::Point> &footprint_spec,
+  bool TebOptimalPlanner::isTrajectoryFeasible(nav2_costmap_2d::Costmap2D *costmap, const std::vector<geometry_msgs::msg::Point> &footprint_spec,
                                                double inscribed_radius, double circumscribed_radius, int look_ahead_idx)
   {
     if (look_ahead_idx < 0 || look_ahead_idx >= teb().sizePoses())
       look_ahead_idx = teb().sizePoses() - 1;
 
-    nav2_costmap_2d::FootprintCollisionChecker footprint_collision_checker(costmap_model);
+    nav2_costmap_2d::FootprintCollisionChecker footprint_collision_checker(costmap);
 
     for (int i = 0; i <= look_ahead_idx; ++i)
     {
@@ -2746,7 +2746,6 @@ namespace hateb_local_planner
             intermediate_pose.position() = intermediate_pose.position() + delta_dist / (n_additional_samples + 1.0);
             intermediate_pose.theta() = g2o::normalize_theta(intermediate_pose.theta() +
                                                              delta_rot / (n_additional_samples + 1.0));
-            // nav2_costmap_2d::FootprintCollisionChecker footprint_collision_checker(costmap_model);
 
             if (footprint_collision_checker.footprintCostAtPose(intermediate_pose.x(), intermediate_pose.y(), intermediate_pose.theta(),
                                                                 footprint_spec) == -1)

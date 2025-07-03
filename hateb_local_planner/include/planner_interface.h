@@ -188,7 +188,7 @@ namespace hateb_local_planner
      * @return \c true, if the robot footprint along the first part of the trajectory intersects with
      *         any obstacle in the costmap, \c false otherwise.
      */
-    virtual bool isTrajectoryFeasible(nav2_costmap_2d::Costmap2D *costmap_model, const std::vector<geometry_msgs::msg::Point> &footprint_spec,
+    virtual bool isTrajectoryFeasible(nav2_costmap_2d::Costmap2D *costmap, const std::vector<geometry_msgs::msg::Point> &footprint_spec,
                                       double inscribed_radius = 0.0, double circumscribed_radius = 0.0, int look_ahead_idx = -1) = 0;
 
     /**
