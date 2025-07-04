@@ -118,102 +118,134 @@ private:
     rclcpp::Publisher<geometry_msgs::msg::PoseStamped>::SharedPtr query_goal_pose_rviz_pub_;
     rclcpp::Publisher<visualization_msgs::msg::Marker>::SharedPtr query_goal_radius_rviz_pub_;
 
+    // =============================
     // ROS2 TF
+    // =============================
     std::shared_ptr<tf2_ros::Buffer> tf_buffer_;
     std::shared_ptr<tf2_ros::TransformListener> tf_listener_;
     tf2::Transform last_robot_pose_;
 
-    double timer_period_, robot_base_radius_;
-
-    bool odom_available_, goal_available_, control_active_;
-    std::vector<double> start_state_, goal_map_frame_, goal_odom_frame_;
-    double goal_radius_, xy_goal_tolerance_, yaw_goal_tolerance_, local_goal_radius_, local_path_range_, global_time_percent_, max_trans_vel_, max_rot_vel_;
-    std::string odometry_topic_, query_goal_topic_, solution_path_topic_, world_frame_, control_active_topic_, robot_base_frame_;
-
-    nav_msgs::msg::Odometry::SharedPtr odom_data_;
-    geometry_msgs::msg::Twist current_robot_velocity_;
-
-    // configs params
-    double pose_prediction_reset_time_ = 0.1;
-    bool initialized_, goal_reached_;
-    cohan_msgs::msg::StateArray agents_states_;                           // State of agents
-    cohan_msgs::msg::TrackedAgents tracked_agents_, prev_tracked_agents_; // Tracked agents from an external module
-
-    rclcpp::Time last_position_time_;
-
-    int robot_type_ = 0;
-    int is_mode_, change_mode_;
-
-    bool enable_backoff_ = false;
-    bool is_dist_max_ = true;
-    std::vector<bool> agent_still_;
-    std::vector<int> visible_agent_ids_; // List of visible agents
-    bool is_dist_under_threshold_, stuck_;
-
-    double global_plan_prune_distance_ = 4.0;
-
+    // =============================
+    // Costmap & Planner Interfaces
+    // =============================
     std::shared_ptr<nav2_costmap_2d::Costmap2DROS> costmap_ros_;
     nav2_costmap_2d::Costmap2D *costmap_;
-
-    hateb_local_planner::ViaPointContainer via_points_; //!< Container of via-points that should be considered during local trajectory optimization
-    geometry_msgs::msg::Twist last_cmd_;                //!< Store the last control command generated in computeVelocityCommands()
-
-    double min_turning_radius_ = 0.1;
-    std::vector<geometry_msgs::msg::PoseStamped> global_plan_; //!< Store the current global plan
-    hateb_local_planner::ObstContainer obstacles_;             //!< Obstacle vector that should be considered during local trajectory optimization
-    int no_infeasible_plans_;                                  //!< Store how many times in a row the planner failed to find a feasible plan.
-    double max_global_plan_lookahead_dist_ = 3.0;
-    bool complete_global_plan_ = true;
-    bool goal_ctrl_ = true;
-    bool global_plan_overwrite_orientation_ = true;
-    std::vector<geometry_msgs::msg::Pose> agents_;
-    hateb_local_planner::TebVisualizationPtr visualization_; //!< Instance of the visualization class (local/global plan, obstacles, ...)
     hateb_local_planner::PlannerInterfacePtr planner_;       //!< Instance of the underlying optimal planner class
+    hateb_local_planner::TebVisualizationPtr visualization_; //!< Instance of the visualization class (local/global plan, obstacles, ...)
 
-    std::map<uint64_t, hateb_local_planner::ViaPointContainer> agents_via_points_map_;
+    // =============================
+    // Robot Geometry & Limits
+    // =============================
+    double robot_base_radius_;
+    double robot_inscribed_radius_ = 0.4;
+    double robot_circumscribed_radius_ = 0.4;
 
     double max_vel_x_ = 0.4;
     double max_vel_y_ = 0.0;
     double max_vel_theta_ = 1.0;
     double max_vel_x_backwards_ = 0.0;
 
-    double wheelbase_ = 1.0;
+    double max_trans_vel_, max_rot_vel_;
+
+    std::string robot_base_frame_;
+    std::string world_frame_;
+
+    // =============================
+    // Goal and State Flags
+    // =============================
+    bool odom_available_, goal_available_, control_active_;
+    bool initialized_, goal_reached_;
+    bool is_dist_under_threshold_;
+    bool complete_global_plan_ = true;
+    bool is_dist_max_ = true;
+    bool free_goal_vel_ = false;
+    std::string query_goal_topic_;
+
+    // =============================
+    // Timing & Prediction
+    // =============================
+    double timer_period_;
     double omega_chage_time_seperation_ = 1.0;
-    bool cmd_angle_instead_rotvel_ = false;
-
+    rclcpp::Time last_position_time_;
     rclcpp::Time last_omega_sign_change_ = this->now() - rclcpp::Duration::from_seconds(omega_chage_time_seperation_);
-
-    bool disable_rapid_omega_chage_ = true;
     double last_omega_;
 
-    double robot_inscribed_radius_ = 0.4;
-    double robot_circumscribed_radius_ = 0.4;
-
-    double dt_hysteresis_ = 0.1;
-    double dt_ref_ = 0.3;
-    bool free_goal_vel_ = false;
-    bool custom_via_points_active_; //!< Keep track whether valid via-points have been received from via_points_sub_
+    // =============================
+    // Global Plan & Local Plan
+    // =============================
+    std::vector<geometry_msgs::msg::PoseStamped> global_plan_; //!< Store the current global plan
+    double max_global_plan_lookahead_dist_ = 4.0;
+    double global_plan_prune_distance_ = 5.0;
     double global_plan_viapoint_sep_ = -0.1;
-    int feasibility_check_no_poses_ = 5;
-    int control_look_ahead_poses_;            //! Index of the pose used to extract the velocity command
-    std::vector<double> agent_nominal_vels_;  // Nominal velocities  of agents based on moving average filter
+    std::string solution_path_topic_;
+
+    // =============================
+    // Goals & Tolerances
+    // =============================
+    std::vector<double> start_state_, goal_map_frame_, goal_odom_frame_;
+    double goal_radius_, xy_goal_tolerance_, yaw_goal_tolerance_;
     hateb_local_planner::PoseSE2 robot_goal_; //!< Store current robot goal
 
-    double agent_radius_ = 0.4;
-    bool include_costmap_obstacles_ = true;
-    double costmap_obstacles_behind_robot_dist_ = 1.5;
+    // =============================
+    // Agents
+    // =============================
+    cohan_msgs::msg::StateArray agents_states_;                           // State of agents
+    cohan_msgs::msg::TrackedAgents tracked_agents_, prev_tracked_agents_; // Tracked agents from an external module
+    std::vector<geometry_msgs::msg::Pose> agents_;
+    std::vector<int> visible_agent_ids_; // List of visible agents
+    std::vector<bool> agent_still_;
+    std::vector<double> agent_nominal_vels_;      // Nominal velocities of agents based on moving average filter
     std::vector<std::vector<double>> agent_vels_; // List of agent velocities over time
-
-    int num_moving_avg_ = 5;
-
-    int stuck_agent_id_; // Stores the agent id who blocked the robot's way during backoff recovery
-    double ang_theta_;   // Re-orientation angle
-    double current_agent_dist_;
     std::vector<cohan_msgs::msg::AgentStatePrediction> agent_states_prediction_;
+    double agent_radius_ = 0.4;
+    int stuck_agent_id_; // Stores the agent id who blocked the robot's way during backoff recovery
+    double current_agent_dist_;
+    std::map<uint64_t, hateb_local_planner::ViaPointContainer> agents_via_points_map_;
 
+    // =============================
+    // Odometry and Commands
+    // =============================
+    std::string odometry_topic_;
+    nav_msgs::msg::Odometry::SharedPtr odom_data_;
+    geometry_msgs::msg::Twist current_robot_velocity_;
+    geometry_msgs::msg::Twist last_cmd_; //!< Store the last control command generated in computeVelocityCommands()
+
+    // =============================
+    // Obstacle Handling
+    // =============================
+    hateb_local_planner::ObstContainer obstacles_; //!< Obstacle vector that should be considered during local trajectory optimization
+    double costmap_obstacles_behind_robot_dist_ = 1.5;
+
+    // =============================
+    // Via Points
+    // =============================
+    hateb_local_planner::ViaPointContainer via_points_; //!< Container of via-points that should be considered during local trajectory optimization
+
+    // =============================
+    // Planner Control and Recovery
+    // =============================
+    int no_infeasible_plans_;      //!< Store how many times in a row the planner failed to find a feasible plan.
+    int control_look_ahead_poses_; //! Index of the pose used to extract the velocity command
+    int feasibility_check_no_poses_ = 5;
+    double ang_theta_; // Re-orientation angle
+
+    // =============================
+    // Footprint
+    // =============================
     std::vector<geometry_msgs::msg::Point> footprint_spec_; //!< Store the footprint of the robot
 
+    // =============================
+    // Optimization Parameters
+    // =============================
+    double dt_hysteresis_ = 0.1;
+    double dt_ref_ = 0.3;
     double weight_optimaltime_ = 1;
+
+    // =============================
+    // Misc
+    // =============================
+    int is_mode_, change_mode_;
+    int num_moving_avg_ = 5;
 };
 
 //!  Constructor.
@@ -323,7 +355,7 @@ HATEBPlanningFramework::HATEBPlanningFramework()
     }
     RCLCPP_WARN(this->get_logger(), "Odometry received");
 
-    // goto_action_server_->start();
+    initialize();
 }
 
 //! Odometry callback.
@@ -767,7 +799,6 @@ void HATEBPlanningFramework::initialize()
     is_dist_max_ = true;
     change_mode_ = 0;
     is_mode_ = 0;
-    stuck_ = false;
     agent_still_.clear();
     agents_states_.states.clear();
     stuck_agent_id_ = -1;
@@ -835,21 +866,21 @@ uint32_t HATEBPlanningFramework::computeVelocityCommands(const geometry_msgs::ms
     goal_reached_ = false;
 
     // TODO: evaluate whether the robot is stuck or not
-    if ((this->get_clock()->now() - last_position_time_).seconds() >= 2.0)
-    { // 0: Robot and 1: Human for type
-        if (visible_agent_ids_.size() > 0)
-        {
-            if (agent_still_[visible_agent_ids_[0] - 1] && is_dist_under_threshold_)
-            {
-                if (change_mode_ == 0)
-                {
-                    RCLCPP_INFO(this->get_logger(), "I am stuck because of an agent, Changing to VelObs mode");
-                }
-                change_mode_++;
-                is_mode_ = 1;
-            }
-        }
-    }
+    // if ((this->get_clock()->now() - last_position_time_).seconds() >= 2.0)
+    // { // 0: Robot and 1: Human for type
+    //     if (visible_agent_ids_.size() > 0)
+    //     {
+    //         if (agent_still_[visible_agent_ids_[0] - 1] && is_dist_under_threshold_)
+    //         {
+    //             if (change_mode_ == 0)
+    //             {
+    //                 RCLCPP_INFO(this->get_logger(), "I am stuck because of an agent, Changing to VelObs mode");
+    //             }
+    //             change_mode_++;
+    //             is_mode_ = 1;
+    //         }
+    //     }
+    // }
 
     geometry_msgs::msg::PoseStamped robot_pose;
 
@@ -887,7 +918,7 @@ uint32_t HATEBPlanningFramework::computeVelocityCommands(const geometry_msgs::ms
     double dy = global_goal.pose.position.y - last_robot_pose_.getOrigin().y();
     tf2::Matrix3x3(last_robot_pose_.getRotation()).getRPY(useless_roll, useless_pitch, yaw);
     double delta_orient = g2o::normalize_theta(tf2::getYaw(global_goal.pose.orientation) - yaw);
-    if (fabs(std::sqrt(dx * dx + dy * dy)) < xy_goal_tolerance_ && fabs(delta_orient) < yaw_goal_tolerance_ && (!complete_global_plan_ || via_points_.size() == 0))
+    if (fabs(std::sqrt(dx * dx + dy * dy)) < xy_goal_tolerance_ && fabs(delta_orient) < yaw_goal_tolerance_ && via_points_.size() == 0)
     {
         goal_reached_ = true;
     }
@@ -906,19 +937,12 @@ uint32_t HATEBPlanningFramework::computeVelocityCommands(const geometry_msgs::ms
     // Get current goal point (last point of the transformed plan)
     robot_goal_.x() = transformed_plan.back().pose.position.x;
     robot_goal_.y() = transformed_plan.back().pose.position.y;
-    // Overwrite goal orientation if needed
-    if (global_plan_overwrite_orientation_)
-    {
-        robot_goal_.theta() = estimateLocalGoalOrientation(global_plan_, transformed_plan.back(), goal_idx, tf_plan_to_global);
-        // overwrite/update goal orientation of the transformed plan with the actual goal (enable using the plan as initialization)
-        tf2::Quaternion q;
-        q.setRPY(0, 0, robot_goal_.theta());
-        transformed_plan.back().pose.orientation = tf2::toMsg(q);
-    }
-    else
-    {
-        robot_goal_.theta() = tf2::getYaw(transformed_plan.back().pose.orientation);
-    }
+    // Overwrite goal orientation
+    robot_goal_.theta() = estimateLocalGoalOrientation(global_plan_, transformed_plan.back(), goal_idx, tf_plan_to_global);
+    // overwrite/update goal orientation of the transformed plan with the actual goal (enable using the plan as initialization)
+    tf2::Quaternion q;
+    q.setRPY(0, 0, robot_goal_.theta());
+    transformed_plan.back().pose.orientation = tf2::toMsg(q);
 
     // overwrite/update start of the transformed plan with the actual robot position (allows using the plan as initial trajectory)
     if (transformed_plan.size() == 1) // plan only contains the goal
@@ -1054,8 +1078,7 @@ uint32_t HATEBPlanningFramework::computeVelocityCommands(const geometry_msgs::ms
     }
 
     transformed_plan.front() = robot_pose;
-    if (!custom_via_points_active_)
-        updateViaPointsContainer(transformed_plan, global_plan_viapoint_sep_);
+    updateViaPointsContainer(transformed_plan, global_plan_viapoint_sep_);
 
     cohan_msgs::msg::OptimizationCostArray op_costs;
     double dt_resize = dt_ref_;
@@ -1336,21 +1359,19 @@ void HATEBPlanningFramework::saturateVelocity(double &vx, double &vy, double &om
 
     // slow change of direction in angular velocity
     double min_vel_theta = 0.02;
-    if (disable_rapid_omega_chage_)
+
+    if (std::signbit(omega) != std::signbit(last_omega_))
     {
-        if (std::signbit(omega) != std::signbit(last_omega_))
+        // signs are changed
+        auto now = this->now();
+        if ((now - last_omega_sign_change_).seconds() <
+            omega_chage_time_seperation_)
         {
-            // signs are changed
-            auto now = this->now();
-            if ((now - last_omega_sign_change_).seconds() <
-                omega_chage_time_seperation_)
-            {
-                // do not allow sign change
-                omega = std::copysign(min_vel_theta, omega);
-            }
-            last_omega_sign_change_ = now;
-            last_omega_ = omega;
+            // do not allow sign change
+            omega = std::copysign(min_vel_theta, omega);
         }
+        last_omega_sign_change_ = now;
+        last_omega_ = omega;
     }
 }
 
@@ -1546,30 +1567,28 @@ bool HATEBPlanningFramework::transformAgentPlan(
 void HATEBPlanningFramework::updateObstacleContainerWithCostmap()
 {
     // Add costmap obstacles if desired
-    if (include_costmap_obstacles_)
+
+    tf2::Vector3 forward = last_robot_pose_.getBasis() * tf2::Vector3(1, 0, 0);
+    Eigen::Vector2d robot_orient(forward.x(), forward.y());
+
+    Eigen::Vector2d robot_position(last_robot_pose_.getOrigin().x(),
+                                   last_robot_pose_.getOrigin().y());
+
+    for (unsigned int i = 0; i < costmap_->getSizeInCellsX() - 1; ++i)
     {
-        tf2::Vector3 forward = last_robot_pose_.getBasis() * tf2::Vector3(1, 0, 0);
-        Eigen::Vector2d robot_orient(forward.x(), forward.y());
-
-        Eigen::Vector2d robot_position(last_robot_pose_.getOrigin().x(),
-                                       last_robot_pose_.getOrigin().y());
-
-        for (unsigned int i = 0; i < costmap_->getSizeInCellsX() - 1; ++i)
+        for (unsigned int j = 0; j < costmap_->getSizeInCellsY() - 1; ++j)
         {
-            for (unsigned int j = 0; j < costmap_->getSizeInCellsY() - 1; ++j)
+            if (costmap_->getCost(i, j) == nav2_costmap_2d::LETHAL_OBSTACLE)
             {
-                if (costmap_->getCost(i, j) == nav2_costmap_2d::LETHAL_OBSTACLE)
-                {
-                    Eigen::Vector2d obs;
-                    costmap_->mapToWorld(i, j, obs.coeffRef(0), obs.coeffRef(1));
+                Eigen::Vector2d obs;
+                costmap_->mapToWorld(i, j, obs.coeffRef(0), obs.coeffRef(1));
 
-                    // check if obstacle is interesting (e.g. not far behind the robot)
-                    Eigen::Vector2d obs_dir = obs - robot_position;
-                    if (obs_dir.dot(robot_orient) < 0 && obs_dir.norm() > costmap_obstacles_behind_robot_dist_)
-                        continue;
+                // check if obstacle is interesting (e.g. not far behind the robot)
+                Eigen::Vector2d obs_dir = obs - robot_position;
+                if (obs_dir.dot(robot_orient) < 0 && obs_dir.norm() > costmap_obstacles_behind_robot_dist_)
+                    continue;
 
-                    obstacles_.push_back(hateb_local_planner::ObstaclePtr(new hateb_local_planner::PointObstacle(obs)));
-                }
+                obstacles_.push_back(hateb_local_planner::ObstaclePtr(new hateb_local_planner::PointObstacle(obs)));
             }
         }
     }
