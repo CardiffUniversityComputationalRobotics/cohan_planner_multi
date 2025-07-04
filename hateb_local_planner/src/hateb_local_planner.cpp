@@ -459,7 +459,6 @@ void HATEBPlanningFramework::costmapCallback(const nav2_msgs::msg::Costmap::Shar
 void HATEBPlanningFramework::queryGoalCallback(const geometry_msgs::msg::PoseStamped::SharedPtr query_goal_msg)
 {
 
-    RCLCPP_WARN(this->get_logger(), "RUNNING QUERY CALLBACK");
     double useless_pitch, useless_roll, yaw;
     tf2::Quaternion q(query_goal_msg->pose.orientation.x, query_goal_msg->pose.orientation.y,
                       query_goal_msg->pose.orientation.z, query_goal_msg->pose.orientation.w);
@@ -564,7 +563,7 @@ void HATEBPlanningFramework::agentsCallback(const pedsim_msgs::msg::AgentStates:
     std::vector<double> agents_behind;
     std::vector<double> agents_radii;
     geometry_msgs::msg::TransformStamped transformed_stamped;
-    std::string base_link = base_link;
+    std::string base_link = "base_footprint";
 
     transformed_stamped = tf_buffer_->lookupTransform("map", base_link, tf2::TimePointZero, tf2::durationFromSec(0.5));
     auto xpos = transformed_stamped.transform.translation.x;
