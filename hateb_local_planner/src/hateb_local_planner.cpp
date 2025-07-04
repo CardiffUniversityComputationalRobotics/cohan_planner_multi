@@ -273,6 +273,9 @@ HATEBPlanningFramework::HATEBPlanningFramework()
     //=======================================================================
     // Get parameters
     //=======================================================================
+    start_state_.resize(2);
+    goal_map_frame_.resize(3);
+    goal_odom_frame_.resize(3);
 
     // ! DECLARE PARAMETERS
     this->declare_parameter("world_frame", rclcpp::ParameterValue(std::string("map")));
