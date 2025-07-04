@@ -12,47 +12,53 @@
  * http://hdl.handle.net/10803/457592, http://www.tdx.cat/handle/10803/457592
  */
 
+// C++ Standard Library
 #include <iostream>
 #include <vector>
-
-#include <boost/bind.hpp>
 #include <math.h>
 
-// ROS2
+// Boost
+#include <boost/bind.hpp>
+
+// ROS2 Core
 #include <rclcpp/rclcpp.hpp>
-#include <visualization_msgs/msg/marker.hpp>
-#include <nav_msgs/msg/odometry.hpp>
 #include <std_msgs/msg/bool.hpp>
 #include <std_msgs/msg/int32.hpp>
+
+// ROS2 Geometry and Navigation
 #include <geometry_msgs/msg/pose_array.hpp>
 #include <geometry_msgs/msg/pose_stamped.hpp>
 #include <geometry_msgs/msg/pose2_d.hpp>
 #include <geometry_msgs/msg/twist_stamped.hpp>
+#include <nav_msgs/msg/odometry.hpp>
+#include <nav_msgs/msg/path.hpp>
+#include <nav2_msgs/msg/costmap.hpp>
+#include <visualization_msgs/msg/marker.hpp>
+
+// ROS2 TF
 #include <tf2_ros/transform_listener.h>
 #include <tf2_ros/buffer.h>
 #include <tf2_ros/message_filter.h>
 #include <tf2_geometry_msgs/tf2_geometry_msgs.hpp>
 
-#include <nav_msgs/msg/path.hpp>
+// Navigation / Costmap
 #include "nav2_costmap_2d/costmap_2d_ros.hpp"
 #include "nav2_costmap_2d/costmap_2d.hpp"
+#include "nav2_costmap_2d/cost_values.hpp"
+#include "nav2_costmap_2d/footprint_collision_checker.hpp"
 
-#include <nav2_msgs/msg/costmap.hpp>
+// Custom / External Messages
 #include <cohan_msgs/msg/state_array.hpp>
+#include <cohan_msgs/msg/agent_states_prediction.hpp>
+#include <esc_move_base_msgs/msg/path2_d.hpp>
 
-// pedsim msgs
+// Pedsim Messages
 #include <pedsim_msgs/msg/agent_states.hpp>
 #include <pedsim_msgs/msg/agent_state.hpp>
 
+// Local Project Headers
 #include <visualization.h>
-
 #include <optimal_planner.h>
-
-#include "nav2_costmap_2d/cost_values.hpp"
-
-#include <cohan_msgs/msg/agent_states_prediction.hpp>
-
-#include "nav2_costmap_2d/footprint_collision_checker.hpp"
 
 #define DEFAULT_AGENT_SEGMENT cohan_msgs::msg::TrackedSegmentType::TORSO
 
@@ -71,7 +77,7 @@ public:
     //! Constructor
     HATEBPlanningFramework();
     //! Planner setup
-    void planWithSimpleSetup();
+    void planningSetup();
     //! Periodic callback to solve the query
     void planningTimerCallback();
     //! Callback for getting current vehicle odometry
@@ -82,11 +88,11 @@ public:
     void controlActiveCallback(const std_msgs::msg::Bool::SharedPtr control_active_msg);
     void costmapCallback(const nav2_msgs::msg::Costmap::SharedPtr msg);
     void agentsCallback(const pedsim_msgs::msg::AgentStates::SharedPtr agent_states_msg);
-    void agentStatesPredictionCallback(const cohan_msgs::msg::AgentStatesPrediction::SharedPtr agent_states_msg);
-    void globalPlanCallback(const nav_msgs::msg::Path::SharedPtr path_msg);
+    void agentsPredictionCallback(const cohan_msgs::msg::AgentStatesPrediction::SharedPtr agent_states_msg);
+    void globalPlanCallback(const esc_move_base_msgs::msg::Path2D::SharedPtr path_msg);
     void initialize();
     bool pruneGlobalPlan(const geometry_msgs::msg::PoseStamped &global_pose, std::vector<geometry_msgs::msg::PoseStamped> &global_plan, double dist_behind_robot);
-    uint32_t computeVelocityCommands(const geometry_msgs::msg::PoseStamped &pose, const geometry_msgs::msg::TwistStamped &velocity, geometry_msgs::msg::TwistStamped &cmd_vel);
+    uint32_t computeVelocityCommands(geometry_msgs::msg::TwistStamped &cmd_vel);
     bool transformGlobalPlan(const std::vector<geometry_msgs::msg::PoseStamped> &global_plan,
                              const geometry_msgs::msg::PoseStamped &global_pose, const nav2_costmap_2d::Costmap2D &costmap, const std::string &global_frame, double max_plan_length,
                              hateb_local_planner::PlanCombined &transformed_plan_combined, int *current_goal_idx, geometry_msgs::msg::TransformStamped *tf_plan_to_global) const;
@@ -109,8 +115,9 @@ private:
     rclcpp::Subscription<geometry_msgs::msg::PoseStamped>::SharedPtr nav_goal_sub_;
     rclcpp::Subscription<std_msgs::msg::Bool>::SharedPtr control_active_sub_;
     rclcpp::Subscription<nav2_msgs::msg::Costmap>::SharedPtr costmap_sub_;
+    rclcpp::Subscription<pedsim_msgs::msg::AgentStates>::SharedPtr agent_states_sub_;
     rclcpp::Subscription<cohan_msgs::msg::AgentStatesPrediction>::SharedPtr agent_states_prediction_sub_;
-    rclcpp::Subscription<nav_msgs::msg::Path>::SharedPtr global_plan_sub_;
+    rclcpp::Subscription<esc_move_base_msgs::msg::Path2D>::SharedPtr global_plan_sub_;
 
     // ! PUBLISHERS
     rclcpp::Publisher<std_msgs::msg::Bool>::SharedPtr goal_reached_pub_;
@@ -308,9 +315,13 @@ HATEBPlanningFramework::HATEBPlanningFramework()
     // Controller active flag
     // control_active_sub_ = this->create_subscription<std_msgs::msg::Bool>(control_active_topic_, 1, std::bind(&OnlinePlannFramework::controlActiveCallback, this, std::placeholders::_1));
 
-    global_plan_sub_ = this->create_subscription<nav_msgs::msg::Path>("/plan", 1, std::bind(&HATEBPlanningFramework::globalPlanCallback, this, std::placeholders::_1));
+    global_plan_sub_ = this->create_subscription<esc_move_base_msgs::msg::Path2D>("/plan", 1, std::bind(&HATEBPlanningFramework::globalPlanCallback, this, std::placeholders::_1));
 
-    costmap_sub_ = this->create_subscription<nav2_msgs::msg::Costmap>("/local_costmap/costmap_raw", 1, std::bind(&HATEBPlanningFramework::costmapCallback, this, std::placeholders::_1));
+    // costmap_sub_ = this->create_subscription<nav2_msgs::msg::Costmap>("/local_costmap/costmap_raw", 1, std::bind(&HATEBPlanningFramework::costmapCallback, this, std::placeholders::_1));
+
+    agent_states_sub_ = this->create_subscription<pedsim_msgs::msg::AgentStates>("/pedsim_simulator/simulated_agents", 1, std::bind(&HATEBPlanningFramework::agentsCallback, this, std::placeholders::_1));
+
+    agent_states_prediction_sub_ = this->create_subscription<cohan_msgs::msg::AgentStatesPrediction>("/agents_prediction", 1, std::bind(&HATEBPlanningFramework::agentsPredictionCallback, this, std::placeholders::_1));
 
     //=======================================================================
     // ! Publishers
@@ -395,13 +406,25 @@ void HATEBPlanningFramework::odomCallback(const nav_msgs::msg::Odometry::SharedP
     odom_data_ = odom_msg;
 }
 
-void HATEBPlanningFramework::globalPlanCallback(const nav_msgs::msg::Path::SharedPtr path_msg)
+void HATEBPlanningFramework::globalPlanCallback(const esc_move_base_msgs::msg::Path2D::SharedPtr path_msg)
 {
 
-    // Example: print first pose if available
-    if (!path_msg->poses.empty())
+    global_plan_.clear();
+
+    if (!path_msg->waypoints.empty())
     {
-        global_plan_ = path_msg->poses;
+        for (geometry_msgs::msg::Pose2D waypoint : path_msg->waypoints)
+        {
+            geometry_msgs::msg::PoseStamped pose_stamped;
+            pose_stamped.pose.position.x = waypoint.x;
+            pose_stamped.pose.position.y = waypoint.y;
+
+            tf2::Quaternion q;
+            q.setRPY(0, 0, waypoint.theta);
+            pose_stamped.pose.orientation = tf2::toMsg(q);
+
+            global_plan_.push_back(pose_stamped);
+        }
     }
 }
 
@@ -435,6 +458,8 @@ void HATEBPlanningFramework::costmapCallback(const nav2_msgs::msg::Costmap::Shar
  */
 void HATEBPlanningFramework::queryGoalCallback(const geometry_msgs::msg::PoseStamped::SharedPtr query_goal_msg)
 {
+
+    RCLCPP_WARN(this->get_logger(), "RUNNING QUERY CALLBACK");
     double useless_pitch, useless_roll, yaw;
     tf2::Quaternion q(query_goal_msg->pose.orientation.x, query_goal_msg->pose.orientation.y,
                       query_goal_msg->pose.orientation.z, query_goal_msg->pose.orientation.w);
@@ -750,7 +775,7 @@ void HATEBPlanningFramework::agentsCallback(const pedsim_msgs::msg::AgentStates:
     }
 }
 
-void HATEBPlanningFramework::agentStatesPredictionCallback(const cohan_msgs::msg::AgentStatesPrediction::SharedPtr agent_states_msg)
+void HATEBPlanningFramework::agentsPredictionCallback(const cohan_msgs::msg::AgentStatesPrediction::SharedPtr agent_states_msg)
 {
     agent_states_prediction_.clear();
     agent_states_prediction_ = agent_states_msg->agent_states_prediction;
@@ -813,7 +838,7 @@ void HATEBPlanningFramework::initialize()
 /*!
  * Setup a sampling-based planner using OMPL.
  */
-void HATEBPlanningFramework::planWithSimpleSetup()
+void HATEBPlanningFramework::planningSetup()
 {
 
     // ======================================
@@ -835,6 +860,7 @@ void HATEBPlanningFramework::planWithSimpleSetup()
 
         HATEBPlanningFramework::planningTimerCallback();
         loop_rate.sleep();
+        RCLCPP_WARN(this->get_logger(), "spinning");
     }
 }
 
@@ -846,12 +872,11 @@ void HATEBPlanningFramework::planningTimerCallback()
 {
     if (goal_available_)
     {
+        // computeVelocityCommands()
     }
 }
 
-uint32_t HATEBPlanningFramework::computeVelocityCommands(const geometry_msgs::msg::PoseStamped &pose,
-                                                         const geometry_msgs::msg::TwistStamped &velocity,
-                                                         geometry_msgs::msg::TwistStamped &cmd_vel)
+uint32_t HATEBPlanningFramework::computeVelocityCommands(geometry_msgs::msg::TwistStamped &cmd_vel)
 {
 
     if (!initialized_)
@@ -1680,7 +1705,7 @@ int main(int argc, char **argv)
 
     auto hateb_planning_framework = std::make_shared<HATEBPlanningFramework>();
 
-    hateb_planning_framework->planWithSimpleSetup();
+    hateb_planning_framework->planningSetup();
 
     rclcpp::spin(hateb_planning_framework);
     return 0;
