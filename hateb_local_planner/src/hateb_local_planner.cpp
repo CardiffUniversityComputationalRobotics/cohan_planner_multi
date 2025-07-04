@@ -288,6 +288,8 @@ HATEBPlanningFramework::HATEBPlanningFramework()
     this->declare_parameter("robot_base_radius", rclcpp::ParameterValue(0.35));
     this->declare_parameter("max_trans_vel", rclcpp::ParameterValue(0.3));
     this->declare_parameter("max_rot_vel", rclcpp::ParameterValue(1.2));
+    this->declare_parameter("xy_goal_tolerance", rclcpp::ParameterValue(0.1));
+    this->declare_parameter("yaw_goal_tolerance", rclcpp::ParameterValue(0.75));
 
     // ! GET PARAMETERS
     world_frame_ = this->get_parameter("world_frame").as_string();
@@ -300,8 +302,12 @@ HATEBPlanningFramework::HATEBPlanningFramework()
     robot_base_radius_ = this->get_parameter("robot_base_radius").as_double();
     max_trans_vel_ = this->get_parameter("max_trans_vel").as_double();
     max_rot_vel_ = this->get_parameter("max_rot_vel").as_double();
+    xy_goal_tolerance_ = this->get_parameter("xy_goal_tolerance").as_double();
+    yaw_goal_tolerance_ = this->get_parameter("yaw_goal_tolerance").as_double();
 
     start_state_.resize(3);
+
+    goal_radius_ = xy_goal_tolerance_;
 
     goal_available_ = false;
 
@@ -318,7 +324,7 @@ HATEBPlanningFramework::HATEBPlanningFramework()
     // Controller active flag
     // control_active_sub_ = this->create_subscription<std_msgs::msg::Bool>(control_active_topic_, 1, std::bind(&OnlinePlannFramework::controlActiveCallback, this, std::placeholders::_1));
 
-    global_plan_sub_ = this->create_subscription<esc_move_base_msgs::msg::Path2D>("/plan", 1, std::bind(&HATEBPlanningFramework::globalPlanCallback, this, std::placeholders::_1));
+    global_plan_sub_ = this->create_subscription<esc_move_base_msgs::msg::Path2D>("/esc_move_base_planner/solution_path", 1, std::bind(&HATEBPlanningFramework::globalPlanCallback, this, std::placeholders::_1));
 
     // costmap_sub_ = this->create_subscription<nav2_msgs::msg::Costmap>("/local_costmap/costmap_raw", 1, std::bind(&HATEBPlanningFramework::costmapCallback, this, std::placeholders::_1));
 
