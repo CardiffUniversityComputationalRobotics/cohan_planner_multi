@@ -137,8 +137,8 @@ namespace hateb_local_planner
     Obstacle *obs_ = new PointObstacle();
     int mode = 0;
     bool exact_arc_length_ = false;
-    double max_vel_x_backwards_ = 0.4;
-    double penalty_epsilon_ = 0;
+    double max_vel_x_backwards_ = 0.0;
+    double penalty_epsilon_ = 0.01;
 
   public:
     EIGEN_MAKE_ALIGNED_OPERATOR_NEW
@@ -222,8 +222,8 @@ namespace hateb_local_planner
     const BaseRobotFootprintModel *robot_model_;
     Obstacle *obs_ = new PointObstacle();
     int mode = 0;
-    double max_vel_x_backwards_ = 0.4;
-    double penalty_epsilon_ = 0;
+    double max_vel_x_backwards_ = 0.0;
+    double penalty_epsilon_ = 0.01;
 
   public:
     EIGEN_MAKE_ALIGNED_OPERATOR_NEW
@@ -292,11 +292,11 @@ namespace hateb_local_planner
   protected:
     // ! param configs
     double max_vel_x_ = 0.4;
-    double max_vel_y_ = 0.4;
-    double max_vel_theta_ = 1.0;
+    double max_vel_y_ = 0.0;
+    double max_vel_theta_ = 1.2;
     double nominal_vel_ = 0.0;
-    double max_vel_x_backwards_ = 0.4;
-    double penalty_epsilon_ = 0;
+    double max_vel_x_backwards_ = 0.0;
+    double penalty_epsilon_ = 0.01;
     bool use_agent_elastic_vel_ = true;
 
   public:
@@ -361,10 +361,10 @@ namespace hateb_local_planner
   protected:
     double exact_arc_length_ = false;
     double nominal_vel_ = 0.0;
-    double max_vel_x_backwards_ = 0.4;
+    double max_vel_x_backwards_ = 0.0;
     double max_vel_x_ = 0.4;
-    double max_vel_theta_ = 1.0;
-    double penalty_epsilon_ = 0;
+    double max_vel_theta_ = 1.2;
+    double penalty_epsilon_ = 0.01;
     double use_agent_elastic_vel_ = true;
 
     //

@@ -759,45 +759,45 @@ namespace hateb_local_planner
     // ! config params
     bool publish_feedback_ = true;
     bool optimization_activate_ = true;
-    double dt_ref_ = 0.1;
+    double dt_ref_ = 0.3;
     double dt_hysteresis_ = 0.1;
     bool include_dynamic_obstacles_ = true;
     int min_samples_ = 3;
     bool teb_autosize_ = true;
     double weight_adapt_factor_ = 2;
     double teb_init_skip_dist_ = 0.4;
-    bool disable_warm_start_ = false;
+    bool disable_warm_start_ = true;
     double force_reinit_new_goal_dist_ = 1.0;
     double force_reinit_new_goal_angular_ = 0.78;
     int planning_mode_ = 1;
     int agent_min_samples_ = 3;
-    int no_inner_iterations_ = 5;
+    int no_inner_iterations_ = 8;
     int no_outer_iterations_ = 4;
     bool legacy_obstacle_association_ = false;
-    double min_turning_radius_ = 0.1;
-    double weight_kinematics_turning_radius_ = 1;
+    double min_turning_radius_ = 0.0;
+    double weight_kinematics_turning_radius_ = 0;
     bool use_agent_robot_safety_c_ = true;
     bool use_agent_robot_ttc_c_ = true;
     bool use_agent_robot_ttcplus_c_ = true;
     bool use_agent_robot_rel_vel_c_ = true;
     bool use_agent_agent_safety_c_ = true;
     bool use_agent_robot_visi_c_ = true;
-    bool optimization_verbose_ = true;
+    bool optimization_verbose_ = false;
     double weight_obstacle_ = 50;
 
     double inflation_dist_ = 0.6;
-    double min_obstacle_dist_ = 0.5;
+    double min_obstacle_dist_ = 0.3;
     double weight_inflation_ = 0.1;
 
     double obstacle_association_force_inclusion_factor_ = 0.5;
     double obstacle_association_cutoff_factor_ = 5;
-    int obstacle_poses_affected_ = 30;
+    int obstacle_poses_affected_ = 1;
 
     double weight_dynamic_obstacle_ = 50;
     double weight_dynamic_obstacle_inflation_ = 0.1;
     double weight_invisible_human_ = 20;
 
-    double weight_viapoint_ = 1;
+    double weight_viapoint_ = 0.05;
     bool via_points_ordered_ = false;
     double weight_agent_viapoint_ = 1;
 
@@ -808,7 +808,7 @@ namespace hateb_local_planner
 
     // ! PARAMS TO CHECK
     // Velocity weights
-    double weight_max_vel_x_ = 2.0;
+    double weight_max_vel_x_ = 0.1;
     double weight_max_vel_y_ = 2.0;
     double weight_max_vel_theta_ = 1.0;
 
@@ -828,7 +828,7 @@ namespace hateb_local_planner
     double weight_agent_acc_lim_theta_ = 0.0;
 
     // Limits
-    double acc_lim_y_ = 1.0;
+    double acc_lim_y_ = 0.3;
 
     // Time optimal weights
     double weight_optimaltime_ = 1.0;
@@ -838,7 +838,7 @@ namespace hateb_local_planner
     double weight_shortest_path_ = 0.0;
 
     // Kinematic constraints
-    double weight_kinematics_nh_ = 1000.0;
+    double weight_kinematics_nh_ = 1.0;
     double weight_kinematics_forward_drive_ = 1.0;
 
     // For rotation preference

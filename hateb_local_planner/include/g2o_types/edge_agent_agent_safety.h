@@ -87,7 +87,7 @@ namespace hateb_local_planner
   protected:
     double agent_radius_ = std::numeric_limits<double>::infinity();
     double min_agent_agent_dist_ = 0.05;
-    double penalty_epsilon_ = 0;
+    double penalty_epsilon_ = 0.01;
 
   public:
     EIGEN_MAKE_ALIGNED_OPERATOR_NEW

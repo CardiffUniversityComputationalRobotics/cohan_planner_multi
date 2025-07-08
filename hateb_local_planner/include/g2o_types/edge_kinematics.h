@@ -171,7 +171,7 @@ namespace hateb_local_planner
 
   protected:
     bool exact_arc_length_ = false;
-    double min_turning_radius_ = 0.5;
+    double min_turning_radius_ = 0.0;
 
   public:
     EIGEN_MAKE_ALIGNED_OPERATOR_NEW

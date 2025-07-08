@@ -146,9 +146,9 @@ namespace hateb_local_planner
 
   protected:
     bool exact_arc_length_ = false;
-    double acc_lim_x_ = 0.5;
-    double acc_lim_theta_ = 1.0;
-    double penalty_epsilon_ = 0;
+    double acc_lim_x_ = 0.3;
+    double acc_lim_theta_ = 0.4;
+    double penalty_epsilon_ = 0.01;
 
   public:
     EIGEN_MAKE_ALIGNED_OPERATOR_NEW
@@ -238,9 +238,9 @@ namespace hateb_local_planner
 
   protected:
     bool exact_arc_length_ = false;
-    double acc_lim_x_ = 0.5;
-    double acc_lim_theta_ = 1.0;
-    double penalty_epsilon_ = 0;
+    double acc_lim_x_ = 0.3;
+    double acc_lim_theta_ = 0.4;
+    double penalty_epsilon_ = 0.01;
 
   public:
     EIGEN_MAKE_ALIGNED_OPERATOR_NEW
@@ -331,9 +331,9 @@ namespace hateb_local_planner
 
   protected:
     bool exact_arc_length_ = false;
-    double acc_lim_x_ = 0.5;
-    double acc_lim_theta_ = 1.0;
-    double penalty_epsilon_ = 0;
+    double acc_lim_x_ = 0.3;
+    double acc_lim_theta_ = 0.4;
+    double penalty_epsilon_ = 0.01;
 
   public:
     EIGEN_MAKE_ALIGNED_OPERATOR_NEW
@@ -424,10 +424,10 @@ namespace hateb_local_planner
 
   protected:
     bool exact_arc_length_ = false;
-    double acc_lim_x_ = 0.5;
+    double acc_lim_x_ = 0.3;
     double acc_lim_y_ = 0.0;
-    double acc_lim_theta_ = 1.0;
-    double penalty_epsilon_ = 0;
+    double acc_lim_theta_ = 0.4;
+    double penalty_epsilon_ = 0.01;
 
   public:
     EIGEN_MAKE_ALIGNED_OPERATOR_NEW
@@ -519,10 +519,10 @@ namespace hateb_local_planner
 
   protected:
     bool exact_arc_length_ = false;
-    double acc_lim_x_ = 0.5;
+    double acc_lim_x_ = 0.3;
     double acc_lim_y_ = 0.0;
-    double acc_lim_theta_ = 1.0;
-    double penalty_epsilon_ = 0;
+    double acc_lim_theta_ = 0.4;
+    double penalty_epsilon_ = 0.01;
 
   public:
     EIGEN_MAKE_ALIGNED_OPERATOR_NEW
@@ -615,10 +615,10 @@ namespace hateb_local_planner
 
   protected:
     bool exact_arc_length_ = false;
-    double acc_lim_x_ = 0.5;
+    double acc_lim_x_ = 0.3;
     double acc_lim_y_ = 0.0;
-    double acc_lim_theta_ = 1.0;
-    double penalty_epsilon_ = 0;
+    double acc_lim_theta_ = 0.4;
+    double penalty_epsilon_ = 0.01;
 
   public:
     EIGEN_MAKE_ALIGNED_OPERATOR_NEW
@@ -699,10 +699,10 @@ namespace hateb_local_planner
 
   protected:
     bool exact_arc_length_ = false;
-    double acc_lim_x_ = 0.5;
+    double acc_lim_x_ = 0.3;
     double acc_lim_y_ = 0.0;
-    double acc_lim_theta_ = 1.0;
-    double penalty_epsilon_ = 0;
+    double acc_lim_theta_ = 0.4;
+    double penalty_epsilon_ = 0.01;
 
   public:
     EIGEN_MAKE_ALIGNED_OPERATOR_NEW
@@ -775,10 +775,10 @@ namespace hateb_local_planner
 
   protected:
     bool exact_arc_length_ = false;
-    double acc_lim_x_ = 0.5;
+    double acc_lim_x_ = 0.3;
     double acc_lim_y_ = 0.0;
-    double acc_lim_theta_ = 1.0;
-    double penalty_epsilon_ = 0;
+    double acc_lim_theta_ = 0.4;
+    double penalty_epsilon_ = 0.01;
 
   public:
     EIGEN_MAKE_ALIGNED_OPERATOR_NEW
@@ -852,10 +852,10 @@ namespace hateb_local_planner
 
   protected:
     bool exact_arc_length_ = false;
-    double acc_lim_x_ = 0.5;
+    double acc_lim_x_ = 0.3;
     double acc_lim_y_ = 0.0;
-    double acc_lim_theta_ = 1.0;
-    double penalty_epsilon_ = 0;
+    double acc_lim_theta_ = 0.4;
+    double penalty_epsilon_ = 0.01;
 
   public:
     EIGEN_MAKE_ALIGNED_OPERATOR_NEW
@@ -946,10 +946,10 @@ namespace hateb_local_planner
 
   protected:
     bool exact_arc_length_ = false;
-    double acc_lim_x_ = 0.5;
+    double acc_lim_x_ = 0.3;
     double acc_lim_y_ = 0.0;
-    double acc_lim_theta_ = 1.0;
-    double penalty_epsilon_ = 0;
+    double acc_lim_theta_ = 0.4;
+    double penalty_epsilon_ = 0.01;
 
   public:
     EIGEN_MAKE_ALIGNED_OPERATOR_NEW
@@ -1041,10 +1041,10 @@ namespace hateb_local_planner
 
   protected:
     bool exact_arc_length_ = false;
-    double acc_lim_x_ = 0.5;
+    double acc_lim_x_ = 0.3;
     double acc_lim_y_ = 0.0;
-    double acc_lim_theta_ = 1.0;
-    double penalty_epsilon_ = 0;
+    double acc_lim_theta_ = 0.4;
+    double penalty_epsilon_ = 0.01;
 
   public:
     EIGEN_MAKE_ALIGNED_OPERATOR_NEW
@@ -1137,10 +1137,10 @@ namespace hateb_local_planner
 
   protected:
     bool exact_arc_length_ = false;
-    double acc_lim_x_ = 0.5;
+    double acc_lim_x_ = 0.3;
     double acc_lim_y_ = 0.0;
-    double acc_lim_theta_ = 1.0;
-    double penalty_epsilon_ = 0;
+    double acc_lim_theta_ = 0.4;
+    double penalty_epsilon_ = 0.01;
 
   public:
     EIGEN_MAKE_ALIGNED_OPERATOR_NEW

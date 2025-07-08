@@ -138,7 +138,7 @@ namespace hateb_local_planner
   protected:
     const BaseRobotFootprintModel *robot_model_; //!< Store pointer to robot_model
     // ! CONFIG PARAMETERS
-    double min_obstacle_dist_ = 0.1;
+    double min_obstacle_dist_ = 0.3;
     double penalty_epsilon_ = 0.5;
     double obstacle_cost_exponent_ = 20;
 

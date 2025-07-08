@@ -29,6 +29,7 @@ find_package(visualization_msgs REQUIRED)
 find_package(interactive_markers REQUIRED)
 find_package(Eigen3 REQUIRED)
 find_package(esc_move_base_msgs REQUIRED)
+find_package(tidup_move_base_msgs REQUIRED)
 find_package(Boost REQUIRED COMPONENTS system thread)
 # find_package(G2O REQUIRED)
 # find_package(SuiteSparse REQUIRED)
@@ -82,6 +83,7 @@ set(dependencies
   pedsim_msgs
   nav2_costmap_2d
   esc_move_base_msgs
+  tidup_move_base_msgs
 )
 
 # External libraries

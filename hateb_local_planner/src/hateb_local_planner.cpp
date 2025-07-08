@@ -49,7 +49,7 @@
 
 // Custom / External Messages
 #include <cohan_msgs/msg/state_array.hpp>
-#include <cohan_msgs/msg/agent_states_prediction.hpp>
+#include <tidup_move_base_msgs/msg/agent_states_prediction.hpp>
 #include <esc_move_base_msgs/msg/path2_d.hpp>
 
 // Pedsim Messages
@@ -88,7 +88,7 @@ public:
     void controlActiveCallback(const std_msgs::msg::Bool::SharedPtr control_active_msg);
     void costmapCallback(const nav2_msgs::msg::Costmap::SharedPtr msg);
     void agentsCallback(const pedsim_msgs::msg::AgentStates::SharedPtr agent_states_msg);
-    void agentsPredictionCallback(const cohan_msgs::msg::AgentStatesPrediction::SharedPtr agent_states_msg);
+    void agentsPredictionCallback(const tidup_move_base_msgs::msg::AgentStatesPrediction::SharedPtr agent_states_msg);
     void globalPlanCallback(const esc_move_base_msgs::msg::Path2D::SharedPtr path_msg);
     void initialize();
     bool pruneGlobalPlan(const geometry_msgs::msg::PoseStamped &global_pose, std::vector<geometry_msgs::msg::PoseStamped> &global_plan, double dist_behind_robot);
@@ -101,7 +101,7 @@ public:
                                         int current_goal_idx, const geometry_msgs::msg::TransformStamped &tf_plan_to_global, int moving_average_length = 3) const;
     bool transformAgentPlan(const geometry_msgs::msg::PoseStamped &robot_pose,
                             const nav2_costmap_2d::Costmap2D &costmap, const std::string &global_frame,
-                            const std::vector<cohan_msgs::msg::PoseWith2DCovariance> &agent_plan,
+                            const std::vector<tidup_move_base_msgs::msg::PoseWith2DCovariance> &agent_plan,
                             hateb_local_planner::AgentPlanCombined &transformed_agent_plan_combined,
                             geometry_msgs::msg::Twist &transformed_agent_twist,
                             tf2::Stamped<tf2::Transform> *tf_agent_plan_to_global) const;
@@ -116,7 +116,7 @@ private:
     rclcpp::Subscription<std_msgs::msg::Bool>::SharedPtr control_active_sub_;
     rclcpp::Subscription<nav2_msgs::msg::Costmap>::SharedPtr costmap_sub_;
     rclcpp::Subscription<pedsim_msgs::msg::AgentStates>::SharedPtr agent_states_sub_;
-    rclcpp::Subscription<cohan_msgs::msg::AgentStatesPrediction>::SharedPtr agent_states_prediction_sub_;
+    rclcpp::Subscription<tidup_move_base_msgs::msg::AgentStatesPrediction>::SharedPtr agent_states_prediction_sub_;
     rclcpp::Subscription<esc_move_base_msgs::msg::Path2D>::SharedPtr global_plan_sub_;
 
     // ! PUBLISHERS
@@ -149,7 +149,7 @@ private:
 
     double max_vel_x_ = 0.4;
     double max_vel_y_ = 0.0;
-    double max_vel_theta_ = 1.0;
+    double max_vel_theta_ = 1.2;
     double max_vel_x_backwards_ = 0.0;
 
     double max_trans_vel_, max_rot_vel_;
@@ -181,9 +181,9 @@ private:
     // Global Plan & Local Plan
     // =============================
     std::vector<geometry_msgs::msg::PoseStamped> global_plan_; //!< Store the current global plan
-    double max_global_plan_lookahead_dist_ = 4.0;
+    double max_global_plan_lookahead_dist_ = 0.0;
     double global_plan_prune_distance_ = 5.0;
-    double global_plan_viapoint_sep_ = -0.1;
+    double global_plan_viapoint_sep_ = 0.2;
     std::string solution_path_topic_;
 
     // =============================
@@ -203,7 +203,7 @@ private:
     std::vector<bool> agent_still_;
     std::vector<double> agent_nominal_vels_;      // Nominal velocities of agents based on moving average filter
     std::vector<std::vector<double>> agent_vels_; // List of agent velocities over time
-    std::vector<cohan_msgs::msg::AgentStatePrediction> agent_states_prediction_;
+    std::vector<tidup_move_base_msgs::msg::AgentStatePrediction> agent_states_prediction_;
     double agent_radius_ = 0.4;
     int stuck_agent_id_; // Stores the agent id who blocked the robot's way during backoff recovery
     double current_agent_dist_;
@@ -221,7 +221,7 @@ private:
     // Obstacle Handling
     // =============================
     hateb_local_planner::ObstContainer obstacles_; //!< Obstacle vector that should be considered during local trajectory optimization
-    double costmap_obstacles_behind_robot_dist_ = 1.5;
+    double costmap_obstacles_behind_robot_dist_ = 0.5;
 
     // =============================
     // Via Points
@@ -233,7 +233,7 @@ private:
     // =============================
     int no_infeasible_plans_;      //!< Store how many times in a row the planner failed to find a feasible plan.
     int control_look_ahead_poses_; //! Index of the pose used to extract the velocity command
-    int feasibility_check_no_poses_ = 5;
+    int feasibility_check_no_poses_ = 2;
     double ang_theta_; // Re-orientation angle
 
     // =============================
@@ -330,7 +330,7 @@ HATEBPlanningFramework::HATEBPlanningFramework()
 
     agent_states_sub_ = this->create_subscription<pedsim_msgs::msg::AgentStates>("/pedsim_simulator/simulated_agents", 1, std::bind(&HATEBPlanningFramework::agentsCallback, this, std::placeholders::_1));
 
-    agent_states_prediction_sub_ = this->create_subscription<cohan_msgs::msg::AgentStatesPrediction>("/agents_prediction", 1, std::bind(&HATEBPlanningFramework::agentsPredictionCallback, this, std::placeholders::_1));
+    agent_states_prediction_sub_ = this->create_subscription<tidup_move_base_msgs::msg::AgentStatesPrediction>("/agents_prediction", 1, std::bind(&HATEBPlanningFramework::agentsPredictionCallback, this, std::placeholders::_1));
 
     //=======================================================================
     // ! Publishers
@@ -781,7 +781,7 @@ void HATEBPlanningFramework::agentsCallback(const pedsim_msgs::msg::AgentStates:
     }
 }
 
-void HATEBPlanningFramework::agentsPredictionCallback(const cohan_msgs::msg::AgentStatesPrediction::SharedPtr agent_states_msg)
+void HATEBPlanningFramework::agentsPredictionCallback(const tidup_move_base_msgs::msg::AgentStatesPrediction::SharedPtr agent_states_msg)
 {
     agent_states_prediction_.clear();
     agent_states_prediction_ = agent_states_msg->agent_states_prediction;
@@ -1212,7 +1212,7 @@ bool HATEBPlanningFramework::pruneGlobalPlan(const geometry_msgs::msg::PoseStamp
     try
     {
         // transform robot pose into the plan frame (we do not wait here, since pruning not crucial, if missed a few times)
-        geometry_msgs::msg::TransformStamped global_to_plan_transform = tf_buffer_->lookupTransform(global_plan.front().header.frame_id, global_pose.header.frame_id, rclcpp::Time(0));
+        geometry_msgs::msg::TransformStamped global_to_plan_transform = tf_buffer_->lookupTransform("map", "map", rclcpp::Time(0));
 
         geometry_msgs::msg::PoseStamped robot;
         tf2::doTransform(global_pose, robot, global_to_plan_transform);
@@ -1268,12 +1268,12 @@ bool HATEBPlanningFramework::transformGlobalPlan(const std::vector<geometry_msgs
         }
 
         // get plan_to_global_transform from plan frame to global_frame
-        geometry_msgs::msg::TransformStamped plan_to_global_transform = tf_buffer_->lookupTransform(global_frame,
-                                                                                                    plan_pose.header.frame_id, tf2::TimePointZero, tf2::durationFromSec(0.5));
+        geometry_msgs::msg::TransformStamped plan_to_global_transform = tf_buffer_->lookupTransform("map",
+                                                                                                    "map", tf2::TimePointZero, tf2::durationFromSec(0.5));
 
         // let's get the pose of the robot in the frame of the plan
         geometry_msgs::msg::PoseStamped robot_pose;
-        robot_pose = tf_buffer_->transform(global_pose, plan_pose.header.frame_id, tf2::durationFromSec(0.05));
+        robot_pose = tf_buffer_->transform(global_pose, "map", tf2::durationFromSec(0.05));
 
         // we'll discard points on the plan that are outside the local costmap
         double dist_threshold = std::max(costmap.getSizeInCellsX() * costmap.getResolution() / 2.0,
@@ -1465,7 +1465,7 @@ double HATEBPlanningFramework::estimateLocalGoalOrientation(const std::vector<ge
 bool HATEBPlanningFramework::transformAgentPlan(
     const geometry_msgs::msg::PoseStamped &robot_pose,
     const nav2_costmap_2d::Costmap2D &costmap, const std::string &global_frame,
-    const std::vector<cohan_msgs::msg::PoseWith2DCovariance> &agent_plan,
+    const std::vector<tidup_move_base_msgs::msg::PoseWith2DCovariance> &agent_plan,
     hateb_local_planner::AgentPlanCombined &transformed_agent_plan_combined,
     geometry_msgs::msg::Twist &transformed_agent_twist,
     tf2::Stamped<tf2::Transform> *tf_agent_plan_to_global) const
@@ -1480,7 +1480,7 @@ bool HATEBPlanningFramework::transformAgentPlan(
 
         // get agent_plan_to_global_transform from plan frame to global_frame
         geometry_msgs::msg::TransformStamped agent_plan_to_global_transform;
-        agent_plan_to_global_transform = tf_buffer_->lookupTransform(global_frame, agent_plan.front().header.frame_id,
+        agent_plan_to_global_transform = tf_buffer_->lookupTransform("map", "map",
                                                                      tf2::TimePointZero, tf2::durationFromSec(0.5));
         tf2::Stamped<tf2::Transform> agent_plan_to_global_transform_;
         tf2::fromMsg(agent_plan_to_global_transform, agent_plan_to_global_transform_);

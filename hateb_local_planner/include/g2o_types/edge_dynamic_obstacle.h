@@ -137,8 +137,8 @@ namespace hateb_local_planner
   protected:
     const BaseRobotFootprintModel *robot_model_; //!< Store pointer to robot_model
     double t_;                                   //!< Estimated time until current pose is reached
-    double min_obstacle_dist_ = 0.05;
-    double penalty_epsilon_ = 0;
+    double min_obstacle_dist_ = 0.3;
+    double penalty_epsilon_ = 0.01;
     double dynamic_obstacle_inflation_dist_ = 0.1;
 
   public:
