@@ -18,7 +18,7 @@
 #include <math.h>
 
 // Boost
-#include <boost/bind.hpp>
+#include <boost/bind/bind.hpp>
 
 // ROS2 Core
 #include <rclcpp/rclcpp.hpp>
@@ -374,8 +374,6 @@ HATEBPlanningFramework::HATEBPlanningFramework()
         RCLCPP_WARN(this->get_logger(), "Waiting for vehicle's odometry");
     }
     RCLCPP_WARN(this->get_logger(), "Odometry received");
-
-    initialize();
 }
 
 //! Odometry callback.
@@ -807,6 +805,10 @@ void HATEBPlanningFramework::agentsPredictionCallback(const cohan_msgs::msg::Age
 void HATEBPlanningFramework::initialize()
 {
 
+    // ADDITIONAL VISUALIZATION
+    visualization_ = boost::make_shared<hateb_local_planner::TebVisualization>(this->shared_from_this());
+    visualization_->initialize();
+
     // reserve some memory for obstacles
     obstacles_.reserve(500);
 
@@ -868,7 +870,6 @@ void HATEBPlanningFramework::planningSetup()
 
         HATEBPlanningFramework::planningTimerCallback();
         loop_rate.sleep();
-        RCLCPP_WARN(this->get_logger(), "spinning");
     }
 }
 
@@ -878,9 +879,14 @@ void HATEBPlanningFramework::planningSetup()
  */
 void HATEBPlanningFramework::planningTimerCallback()
 {
-    if (goal_available_)
+    if (goal_available_ && global_plan_.size() > 0)
     {
-        // computeVelocityCommands()
+        geometry_msgs::msg::TwistStamped current_robot_velocity_stamped;
+        current_robot_velocity_stamped.header.stamp = this->now();
+        current_robot_velocity_stamped.header.frame_id = "map";
+        current_robot_velocity_stamped.twist = current_robot_velocity_;
+        computeVelocityCommands(current_robot_velocity_stamped);
+        RCLCPP_WARN(this->get_logger(), "COMPUTED VELOCITY");
     }
 }
 
@@ -1194,6 +1200,8 @@ uint32_t HATEBPlanningFramework::computeVelocityCommands(geometry_msgs::msg::Twi
         visualization_->publishMode(-1);
     else
         visualization_->publishMode(is_mode_);
+
+    return 1;
 }
 
 bool HATEBPlanningFramework::pruneGlobalPlan(const geometry_msgs::msg::PoseStamped &global_pose, std::vector<geometry_msgs::msg::PoseStamped> &global_plan, double dist_behind_robot)
@@ -1713,6 +1721,7 @@ int main(int argc, char **argv)
 
     auto hateb_planning_framework = std::make_shared<HATEBPlanningFramework>();
 
+    hateb_planning_framework->initialize();
     hateb_planning_framework->planningSetup();
 
     rclcpp::spin(hateb_planning_framework);
