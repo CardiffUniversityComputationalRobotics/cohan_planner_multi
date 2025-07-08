@@ -133,8 +133,10 @@ namespace hateb_local_planner
         std::chrono::duration<double>(CLEARING_TIMER_DURATION),
         std::bind(&TebVisualization::clearingTimerCB, this));
 
-    node_->declare_parameter<std::string>("ns", "");
-    node_->get_parameter("ns", ns_);
+    // node_->declare_parameter<std::string>("ns", "");
+    // node_->get_parameter("ns", ns_);
+
+    ns_ = "";
 
     last_robot_fp_poses_idx_ = 0;
     last_agent_fp_poses_idx_ = 0;
