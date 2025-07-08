@@ -124,6 +124,7 @@ private:
     rclcpp::Publisher<std_msgs::msg::Bool>::SharedPtr stop_motion_pub_;
     rclcpp::Publisher<geometry_msgs::msg::PoseStamped>::SharedPtr query_goal_pose_rviz_pub_;
     rclcpp::Publisher<visualization_msgs::msg::Marker>::SharedPtr query_goal_radius_rviz_pub_;
+    rclcpp::Publisher<geometry_msgs::msg::Twist>::SharedPtr cmd_vel_pub_;
 
     // =============================
     // ROS2 TF
@@ -340,6 +341,8 @@ HATEBPlanningFramework::HATEBPlanningFramework()
 
     query_goal_pose_rviz_pub_ = this->create_publisher<geometry_msgs::msg::PoseStamped>("query_goal_pose_rviz", 1);
     query_goal_radius_rviz_pub_ = this->create_publisher<visualization_msgs::msg::Marker>("query_goal_radius_rviz", 1);
+
+    cmd_vel_pub_ = this->create_publisher<geometry_msgs::msg::Twist>("cmd_vel", 1);
 
     // while (!grid_map_client_->wait_for_service(1s))
     // {
@@ -1190,6 +1193,8 @@ uint32_t HATEBPlanningFramework::computeVelocityCommands(geometry_msgs::msg::Twi
 
     // store last command (for recovery analysis etc.)
     last_cmd_ = cmd_vel.twist;
+
+    cmd_vel_pub_->publish(last_cmd_);
 
     // Now visualize everything
     planner_->visualize();
