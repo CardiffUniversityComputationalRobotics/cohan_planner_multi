@@ -148,9 +148,7 @@ private:
     double robot_inscribed_radius_ = 0.4;
     double robot_circumscribed_radius_ = 0.4;
 
-    double max_vel_x_ = 0.4;
     double max_vel_y_ = 0.0;
-    double max_vel_theta_ = 1.2;
     double max_vel_x_backwards_ = 0.0;
 
     double max_trans_vel_, max_rot_vel_;
@@ -287,6 +285,7 @@ HATEBPlanningFramework::HATEBPlanningFramework()
     this->declare_parameter("query_goal_topic", rclcpp::ParameterValue(std::string("/tidup_move_base_planner/query_goal")));
     this->declare_parameter("solution_path_topic", rclcpp::ParameterValue(std::string("/tidup_move_base_planner/solution_path")));
     this->declare_parameter("robot_base_radius", rclcpp::ParameterValue(0.35));
+    this->declare_parameter("agent_radius", rclcpp::ParameterValue(0.3));
     this->declare_parameter("max_trans_vel", rclcpp::ParameterValue(0.3));
     this->declare_parameter("max_rot_vel", rclcpp::ParameterValue(1.2));
     this->declare_parameter("xy_goal_tolerance", rclcpp::ParameterValue(0.1));
@@ -301,10 +300,14 @@ HATEBPlanningFramework::HATEBPlanningFramework()
     query_goal_topic_ = this->get_parameter("query_goal_topic").as_string();
     solution_path_topic_ = this->get_parameter("solution_path_topic").as_string();
     robot_base_radius_ = this->get_parameter("robot_base_radius").as_double();
+    agent_radius_ = this->get_parameter("agent_radius").as_double();
     max_trans_vel_ = this->get_parameter("max_trans_vel").as_double();
     max_rot_vel_ = this->get_parameter("max_rot_vel").as_double();
     xy_goal_tolerance_ = this->get_parameter("xy_goal_tolerance").as_double();
     yaw_goal_tolerance_ = this->get_parameter("yaw_goal_tolerance").as_double();
+
+    robot_inscribed_radius_ = robot_base_radius_;
+    robot_circumscribed_radius_ = robot_base_radius_;
 
     start_state_.resize(3);
 
@@ -322,12 +325,7 @@ HATEBPlanningFramework::HATEBPlanningFramework()
     // 2D Nav Goal
     nav_goal_sub_ = this->create_subscription<geometry_msgs::msg::PoseStamped>(query_goal_topic_, 1, std::bind(&HATEBPlanningFramework::queryGoalCallback, this, std::placeholders::_1));
 
-    // Controller active flag
-    // control_active_sub_ = this->create_subscription<std_msgs::msg::Bool>(control_active_topic_, 1, std::bind(&OnlinePlannFramework::controlActiveCallback, this, std::placeholders::_1));
-
     global_plan_sub_ = this->create_subscription<esc_move_base_msgs::msg::Path2D>("/esc_move_base_planner/solution_path", 1, std::bind(&HATEBPlanningFramework::globalPlanCallback, this, std::placeholders::_1));
-
-    // costmap_sub_ = this->create_subscription<nav2_msgs::msg::Costmap>("/local_costmap/costmap_raw", 1, std::bind(&HATEBPlanningFramework::costmapCallback, this, std::placeholders::_1));
 
     agent_states_sub_ = this->create_subscription<pedsim_msgs::msg::AgentStates>("/pedsim_simulator/simulated_agents", 1, std::bind(&HATEBPlanningFramework::agentsCallback, this, std::placeholders::_1));
 
@@ -343,21 +341,6 @@ HATEBPlanningFramework::HATEBPlanningFramework()
     query_goal_radius_rviz_pub_ = this->create_publisher<visualization_msgs::msg::Marker>("query_goal_radius_rviz", 1);
 
     cmd_vel_pub_ = this->create_publisher<geometry_msgs::msg::Twist>("cmd_vel", 1);
-
-    // while (!grid_map_client_->wait_for_service(1s))
-    // {
-    //     if (!rclcpp::ok())
-    //     {
-    //         RCLCPP_ERROR(rclcpp::get_logger("rclcpp"), "Interrupted while waiting for the service. Exiting.");
-    //     }
-    //     RCLCPP_INFO(rclcpp::get_logger("rclcpp"), "service not available, waiting again...");
-    // }
-
-    //=======================================================================
-    // Action server
-    //=======================================================================
-    // goto_action_server_ = new SmfBaseGoToActionServer(
-    //     this, goto_action_, std::bind(&HATEBPlanningFramework::goToActionCallback, this, std::placeholders::_1), false);
 
     // ! Obtaining costmap
     costmap_ros_ = std::make_shared<nav2_costmap_2d::Costmap2DROS>("local_costmap");
@@ -907,23 +890,6 @@ uint32_t HATEBPlanningFramework::computeVelocityCommands(geometry_msgs::msg::Twi
     cmd_vel.twist.linear.x = cmd_vel.twist.linear.y = cmd_vel.twist.angular.z = 0;
     goal_reached_ = false;
 
-    // TODO: evaluate whether the robot is stuck or not
-    // if ((this->get_clock()->now() - last_position_time_).seconds() >= 2.0)
-    // { // 0: Robot and 1: Human for type
-    //     if (visible_agent_ids_.size() > 0)
-    //     {
-    //         if (agent_still_[visible_agent_ids_[0] - 1] && is_dist_under_threshold_)
-    //         {
-    //             if (change_mode_ == 0)
-    //             {
-    //                 RCLCPP_INFO(this->get_logger(), "I am stuck because of an agent, Changing to VelObs mode");
-    //             }
-    //             change_mode_++;
-    //             is_mode_ = 1;
-    //         }
-    //     }
-    // }
-
     geometry_msgs::msg::PoseStamped robot_pose;
 
     robot_pose.header.frame_id = world_frame_;
@@ -1185,7 +1151,7 @@ uint32_t HATEBPlanningFramework::computeVelocityCommands(geometry_msgs::msg::Twi
 
     // Saturate velocity, if the optimization results violates the constraints (could be possible due to soft constraints).
     saturateVelocity(cmd_vel.twist.linear.x, cmd_vel.twist.linear.y, cmd_vel.twist.angular.z,
-                     max_vel_x_, max_vel_y_, max_vel_theta_,
+                     max_trans_vel, max_vel_y_, max_rot_vel_,
                      max_vel_x_backwards_);
 
     // a feasible solution should be found, reset counter
