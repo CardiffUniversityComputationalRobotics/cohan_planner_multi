@@ -1151,7 +1151,7 @@ uint32_t HATEBPlanningFramework::computeVelocityCommands(geometry_msgs::msg::Twi
 
     // Saturate velocity, if the optimization results violates the constraints (could be possible due to soft constraints).
     saturateVelocity(cmd_vel.twist.linear.x, cmd_vel.twist.linear.y, cmd_vel.twist.angular.z,
-                     max_trans_vel, max_vel_y_, max_rot_vel_,
+                     max_trans_vel_, max_vel_y_, max_rot_vel_,
                      max_vel_x_backwards_);
 
     // a feasible solution should be found, reset counter
