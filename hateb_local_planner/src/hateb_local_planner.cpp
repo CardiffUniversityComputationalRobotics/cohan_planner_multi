@@ -183,12 +183,11 @@ private:
     double max_global_plan_lookahead_dist_ = 0.0;
     double global_plan_prune_distance_ = 5.0;
     double global_plan_viapoint_sep_ = 0.2;
-    std::string solution_path_topic_;
 
     // =============================
     // Goals & Tolerances
     // =============================
-    std::vector<double> start_state_, goal_map_frame_, goal_odom_frame_;
+    std::vector<double> goal_map_frame_, goal_odom_frame_;
     double goal_radius_, xy_goal_tolerance_, yaw_goal_tolerance_;
     hateb_local_planner::PoseSE2 robot_goal_; //!< Store current robot goal
 
@@ -272,18 +271,15 @@ HATEBPlanningFramework::HATEBPlanningFramework()
     //=======================================================================
     // Get parameters
     //=======================================================================
-    start_state_.resize(2);
     goal_map_frame_.resize(3);
     goal_odom_frame_.resize(3);
 
     // ! DECLARE PARAMETERS
     this->declare_parameter("world_frame", rclcpp::ParameterValue(std::string("map")));
-    this->declare_parameter("start_state", rclcpp::ParameterValue(std::vector<double>{0.0, 0.0, 0.0}));
     this->declare_parameter("goal_state", rclcpp::ParameterValue(std::vector<double>{5.0, 0.0, 0.0}));
     this->declare_parameter("timer_period", rclcpp::ParameterValue(0.52));
     this->declare_parameter("odometry_topic", rclcpp::ParameterValue(std::string("/odom")));
     this->declare_parameter("query_goal_topic", rclcpp::ParameterValue(std::string("/tidup_move_base_planner/query_goal")));
-    this->declare_parameter("solution_path_topic", rclcpp::ParameterValue(std::string("/tidup_move_base_planner/solution_path")));
     this->declare_parameter("robot_base_radius", rclcpp::ParameterValue(0.35));
     this->declare_parameter("agent_radius", rclcpp::ParameterValue(0.3));
     this->declare_parameter("max_trans_vel", rclcpp::ParameterValue(0.3));
@@ -293,12 +289,10 @@ HATEBPlanningFramework::HATEBPlanningFramework()
 
     // ! GET PARAMETERS
     world_frame_ = this->get_parameter("world_frame").as_string();
-    start_state_ = this->get_parameter("start_state").as_double_array();
     goal_map_frame_ = this->get_parameter("goal_state").as_double_array();
     timer_period_ = this->get_parameter("timer_period").as_double();
     odometry_topic_ = this->get_parameter("odometry_topic").as_string();
     query_goal_topic_ = this->get_parameter("query_goal_topic").as_string();
-    solution_path_topic_ = this->get_parameter("solution_path_topic").as_string();
     robot_base_radius_ = this->get_parameter("robot_base_radius").as_double();
     agent_radius_ = this->get_parameter("agent_radius").as_double();
     max_trans_vel_ = this->get_parameter("max_trans_vel").as_double();
@@ -308,8 +302,6 @@ HATEBPlanningFramework::HATEBPlanningFramework()
 
     robot_inscribed_radius_ = robot_base_radius_;
     robot_circumscribed_radius_ = robot_base_radius_;
-
-    start_state_.resize(3);
 
     goal_radius_ = xy_goal_tolerance_;
 
