@@ -932,6 +932,9 @@ uint32_t HATEBPlanningFramework::computeVelocityCommands(geometry_msgs::msg::Twi
     if (transformed_plan.empty())
     {
         RCLCPP_WARN(this->get_logger(), "Transformed plan is empty. Cannot determine a local plan.");
+        cmd_vel.twist.linear.x = 0.0;
+        cmd_vel.twist.angular.z = 0.0;
+        cmd_vel_pub_->publish(cmd_vel.twist);
     }
 
     // Get current goal point (last point of the transformed plan)
