@@ -2536,6 +2536,8 @@ namespace hateb_local_planner
       return false;
     }
 
+    vy = 0;
+
     look_ahead_poses = std::max(1, std::min(look_ahead_poses, (int)teb_.sizePoses() - 1));
     double dt = 0.0;
     for (int counter = 0; counter < look_ahead_poses; ++counter)

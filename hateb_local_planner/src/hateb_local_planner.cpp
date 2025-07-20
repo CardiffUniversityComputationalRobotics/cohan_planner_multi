@@ -864,7 +864,6 @@ void HATEBPlanningFramework::planningTimerCallback()
         current_robot_velocity_stamped.header.frame_id = "map";
         current_robot_velocity_stamped.twist = current_robot_velocity_;
         computeVelocityCommands(current_robot_velocity_stamped);
-        RCLCPP_WARN(this->get_logger(), "COMPUTED VELOCITY");
     }
 }
 
@@ -933,8 +932,10 @@ uint32_t HATEBPlanningFramework::computeVelocityCommands(geometry_msgs::msg::Twi
     {
         RCLCPP_WARN(this->get_logger(), "Transformed plan is empty. Cannot determine a local plan.");
         cmd_vel.twist.linear.x = 0.0;
+        cmd_vel.twist.linear.y = 0.0;
         cmd_vel.twist.angular.z = 0.0;
         cmd_vel_pub_->publish(cmd_vel.twist);
+        return 1;
     }
 
     // Get current goal point (last point of the transformed plan)
