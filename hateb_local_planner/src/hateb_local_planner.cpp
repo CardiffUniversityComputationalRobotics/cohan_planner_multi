@@ -210,7 +210,7 @@ private:
     // =============================
     // Odometry and Commands
     // =============================
-    std::string odometry_topic_;
+    std::string odometry_topic_, cmd_vel_topic_;
     nav_msgs::msg::Odometry::SharedPtr odom_data_;
     geometry_msgs::msg::Twist current_robot_velocity_;
     geometry_msgs::msg::Twist last_cmd_; //!< Store the last control command generated in computeVelocityCommands()
@@ -279,6 +279,7 @@ HATEBPlanningFramework::HATEBPlanningFramework()
     this->declare_parameter("goal_state", rclcpp::ParameterValue(std::vector<double>{5.0, 0.0, 0.0}));
     this->declare_parameter("timer_period", rclcpp::ParameterValue(0.52));
     this->declare_parameter("odometry_topic", rclcpp::ParameterValue(std::string("/odom")));
+    this->declare_parameter("cmd_vel_topic", rclcpp::ParameterValue(std::string("/cmd_vel")));
     this->declare_parameter("query_goal_topic", rclcpp::ParameterValue(std::string("/tidup_move_base_planner/query_goal")));
     this->declare_parameter("robot_base_radius", rclcpp::ParameterValue(0.35));
     this->declare_parameter("agent_radius", rclcpp::ParameterValue(0.3));
@@ -292,6 +293,7 @@ HATEBPlanningFramework::HATEBPlanningFramework()
     goal_map_frame_ = this->get_parameter("goal_state").as_double_array();
     timer_period_ = this->get_parameter("timer_period").as_double();
     odometry_topic_ = this->get_parameter("odometry_topic").as_string();
+    cmd_vel_topic_ = this->get_parameter("cmd_vel_topic").as_string();
     query_goal_topic_ = this->get_parameter("query_goal_topic").as_string();
     robot_base_radius_ = this->get_parameter("robot_base_radius").as_double();
     agent_radius_ = this->get_parameter("agent_radius").as_double();
@@ -332,7 +334,7 @@ HATEBPlanningFramework::HATEBPlanningFramework()
     query_goal_pose_rviz_pub_ = this->create_publisher<geometry_msgs::msg::PoseStamped>("query_goal_pose_rviz", 1);
     query_goal_radius_rviz_pub_ = this->create_publisher<visualization_msgs::msg::Marker>("query_goal_radius_rviz", 1);
 
-    cmd_vel_pub_ = this->create_publisher<geometry_msgs::msg::Twist>("cmd_vel", 1);
+    cmd_vel_pub_ = this->create_publisher<geometry_msgs::msg::Twist>(cmd_vel_topic_, 1);
 
     // ! Obtaining costmap
     costmap_ros_ = std::make_shared<nav2_costmap_2d::Costmap2DROS>("local_costmap");
