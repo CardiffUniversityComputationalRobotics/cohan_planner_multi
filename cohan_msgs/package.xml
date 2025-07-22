@@ -21,6 +21,9 @@
 
   <member_of_group>rosidl_interface_packages</member_of_group>
 
+  <build_depend>costmap_converter</build_depend>
+  <exec_depend>costmap_converter</exec_depend>
+
   <!-- Message dependencies -->
   <depend>geometry_msgs</depend>
   <depend>nav_msgs</depend>
