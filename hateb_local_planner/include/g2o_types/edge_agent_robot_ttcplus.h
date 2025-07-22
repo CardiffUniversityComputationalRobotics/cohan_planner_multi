@@ -41,7 +41,7 @@
 #include <g2o_types/vertex_timediff.h>
 #include <g2o_types/penalties.h>
 // #include <hateb_config.h>
-#include <std_msgs/Header.h>
+#include <std_msgs/msg/header.hpp>
 #include "sstream"
 #include <g2o_types/base_teb_edges.h>
 

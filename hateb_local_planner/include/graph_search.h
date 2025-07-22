@@ -58,7 +58,7 @@
 
 #include <Eigen/Core>
 
-#include <geometry_msgs/Twist.h>
+#include <geometry_msgs/msg/twist.hpp>
 
 #include <hateb_local_planner/equivalence_relations.h>
 #include <hateb_local_planner/pose_se2.h>

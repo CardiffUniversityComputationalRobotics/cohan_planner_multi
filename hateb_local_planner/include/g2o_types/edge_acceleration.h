@@ -51,7 +51,7 @@
 // #include <hateb_config.h>
 #include <g2o_types/base_teb_edges.h>
 
-#include <geometry_msgs/Twist.h>
+#include <geometry_msgs/msg/twist.hpp>
 
 namespace hateb_local_planner
 {

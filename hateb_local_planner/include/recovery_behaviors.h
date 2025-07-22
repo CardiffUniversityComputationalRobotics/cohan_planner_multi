@@ -41,7 +41,7 @@
 #define RECOVERY_BEHAVIORS_H__
 
 #include <boost/circular_buffer.hpp>
-#include <geometry_msgs/Twist.h>
+#include <geometry_msgs/msg/twist.hpp>
 #include <ros/ros.h>
 
 namespace hateb_local_planner
