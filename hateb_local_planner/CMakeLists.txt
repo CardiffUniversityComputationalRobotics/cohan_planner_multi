@@ -41,12 +41,13 @@ find_package(costmap_converter REQUIRED)
 find_package(costmap_converter_msgs REQUIRED)
 
 if(NOT G2O_INCLUDE_DIRS)
-  set(G2O_INCLUDE_DIRS /usr/include/g2o)
+  set(G2O_INCLUDE_DIRS /opt/ros/humble/include/g2o)
 endif()
 if(NOT G2O_LIBRARIES)
   set(G2O_LIBRARIES
-    /home/sasm/g2o/build/lib/libg2o_core.so
-    /home/sasm/g2o/build/lib/libg2o_stuff.so
+    /home/$ENV{USER}/ros/$ENV{ROS_DISTRO}/system/src/g2o/build/lib/libg2o_core.so
+    /home/$ENV{USER}/ros/$ENV{ROS_DISTRO}/system/src/g2o/build/lib/libg2o_stuff.so
+    /home/$ENV{USER}/ros/$ENV{ROS_DISTRO}/system/src/g2o/build/lib/libg2o_solver_cholmod.so
     # add others if needed
   )
 endif()
@@ -59,7 +60,7 @@ include_directories(
   include
   ${EIGEN3_INCLUDE_DIRS}
   ${G2O_INCLUDE_DIR}
-  /usr/include/suitesparse
+  /usr/include/suitesparse 
   SYSTEM
 )
 
@@ -114,7 +115,8 @@ target_link_libraries(hateb_local_planner_node
     colamd
     camd
     ccolamd
-     )
+    fmt
+  )
 
 # Install targets
 install(TARGETS
@@ -122,39 +124,5 @@ install(TARGETS
   DESTINATION lib/${PROJECT_NAME}
 )
 
-# add_executable(test_optim_node src/test_optim_node.cpp)
-# target_link_libraries(test_optim_node hateb_local_planner ${EXTERNAL_LIBS})
-# ament_target_dependencies(${exec_name}
-#   rclcpp
-#   pluginlib
-#   tf2
-#   tf2_ros
-#   geometry_msgs
-#   nav_msgs
-#   std_msgs
-#   visualization_msgs
-#   cohan_msgs
-#   # agent_path_prediction
-# )
-
-
-
-# install(DIRECTORY include/${PROJECT_NAME}/
-#   DESTINATION include/
-# )
-
-
-# Python scripts (if needed)
-# install(PROGRAMS
-#   scripts/cmd_vel_to_ackermann_drive.py
-#   scripts/export_to_mat.py
-#   scripts/export_to_svg.py
-#   scripts/publish_dynamic_obstacle.py
-#   scripts/publish_test_obstacles.py
-#   scripts/publish_viapoints.py
-#   scripts/visualize_velocity_profile.py
-#   scripts/save_to_files.py
-#   DESTINATION lib/${PROJECT_NAME}
-# )
 
 ament_package()
