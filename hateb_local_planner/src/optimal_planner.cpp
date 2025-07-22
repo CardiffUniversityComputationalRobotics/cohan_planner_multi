@@ -53,6 +53,16 @@
 
 namespace hateb_local_planner
 {
+  template <typename T>
+  inline int sign(T x)
+  {
+    if (x > 0)
+      return 1;
+    else if (x < 0)
+      return -1;
+    else
+      return 0;
+  }
 
   // ============== Implementation ===================
 
@@ -2502,7 +2512,7 @@ namespace hateb_local_planner
       Eigen::Vector2d conf1dir(cos(pose1.theta()), sin(pose1.theta()));
       // translational velocity
       double dir = deltaS.dot(conf1dir);
-      vx = (double)g2o::sign(dir) * deltaS.norm() / dt;
+      vx = (double)hateb_local_planner::sign(dir) * deltaS.norm() / dt;
       vy = 0;
     }
 

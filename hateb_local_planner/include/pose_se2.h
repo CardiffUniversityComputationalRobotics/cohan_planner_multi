@@ -55,6 +55,18 @@
 namespace hateb_local_planner
 {
 
+  inline double average_angle(double theta1, double theta2)
+  {
+    double x, y;
+
+    x = std::cos(theta1) + std::cos(theta2);
+    y = std::sin(theta1) + std::sin(theta2);
+    if (x == 0 && y == 0)
+      return 0;
+    else
+      return std::atan2(y, x);
+  }
+
   /**
    * @class PoseSE2
    * @brief This class implements a pose in the domain SE2: \f$ \mathbb{R}^2 \times S^1 \f$
@@ -245,7 +257,7 @@ namespace hateb_local_planner
     void averageInPlace(const PoseSE2 &pose1, const PoseSE2 &pose2)
     {
       _position = (pose1._position + pose2._position) / 2;
-      _theta = g2o::average_angle(pose1._theta, pose2._theta);
+      _theta = hateb_local_planner::average_angle(pose1._theta, pose2._theta);
     }
 
     /**
@@ -258,7 +270,7 @@ namespace hateb_local_planner
      */
     static PoseSE2 average(const PoseSE2 &pose1, const PoseSE2 &pose2)
     {
-      return PoseSE2((pose1._position + pose2._position) / 2, g2o::average_angle(pose1._theta, pose2._theta));
+      return PoseSE2((pose1._position + pose2._position) / 2, hateb_local_planner::average_angle(pose1._theta, pose2._theta));
     }
 
     /**
