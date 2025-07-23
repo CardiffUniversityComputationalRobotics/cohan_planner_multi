@@ -54,6 +54,8 @@
   <exec_depend>std_srvs</exec_depend>
   <exec_depend>tidup_move_base_msgs</exec_depend>
 
+  <depend>human_traj_predictor</depend>
+
   <!-- External libraries (handled manually in CMakeLists.txt) -->
   <!-- <exec_depend>libg2o</exec_depend> -->
   <!-- <exec_depend>suitesparse</exec_depend> -->
