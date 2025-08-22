@@ -291,7 +291,7 @@ namespace hateb_local_planner
 
   protected:
     // ! param configs
-    double max_vel_x_ = 0.4;
+    double max_vel_x_ = 0.5;
     double max_vel_y_ = 0.0;
     double max_vel_theta_ = 1.2;
     double nominal_vel_ = 0.0;
@@ -362,7 +362,7 @@ namespace hateb_local_planner
     double exact_arc_length_ = false;
     double nominal_vel_ = 0.0;
     double max_vel_x_backwards_ = 0.0;
-    double max_vel_x_ = 0.4;
+    double max_vel_x_ = 0.5;
     double max_vel_theta_ = 1.2;
     double penalty_epsilon_ = 0.01;
     double use_agent_elastic_vel_ = true;

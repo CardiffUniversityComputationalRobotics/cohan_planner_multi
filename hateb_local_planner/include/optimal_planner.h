@@ -801,7 +801,7 @@ namespace hateb_local_planner
     bool via_points_ordered_ = false;
     double weight_agent_viapoint_ = 1;
 
-    double max_vel_x_ = 0.4;
+    double max_vel_x_ = 0.5;
     double max_vel_y_ = 0.0;
 
     bool add_invisible_humans_ = false;
