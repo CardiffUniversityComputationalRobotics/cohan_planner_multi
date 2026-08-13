@@ -1,64 +1,69 @@
-cmake_minimum_required(VERSION 2.8.3)
+cmake_minimum_required(VERSION 3.8)
 project(cohan_layers)
-set_directory_properties(PROPERTIES COMPILE_OPTIONS "-Wall;-Werror")
 
-add_compile_options(-std=c++11)
+set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
-find_package(catkin REQUIRED COMPONENTS
+find_package(ament_cmake REQUIRED)
+find_package(angles REQUIRED)
+find_package(cohan_msgs REQUIRED)
+find_package(geometry_msgs REQUIRED)
+find_package(nav2_costmap_2d REQUIRED)
+find_package(pluginlib REQUIRED)
+find_package(rclcpp REQUIRED)
+find_package(std_msgs REQUIRED)
+find_package(std_srvs REQUIRED)
+find_package(tf2 REQUIRED)
+find_package(tf2_geometry_msgs REQUIRED)
+find_package(tf2_ros REQUIRED)
+find_package(Eigen3 REQUIRED)
+
+set(dependencies
   angles
-  costmap_2d
-  dynamic_reconfigure
-  geometry_msgs
   cohan_msgs
+  geometry_msgs
+  nav2_costmap_2d
   pluginlib
-  roscpp
-  rospy
+  rclcpp
+  std_msgs
+  std_srvs
+  tf2
+  tf2_geometry_msgs
+  tf2_ros
 )
 
-generate_dynamic_reconfigure_options(
-  cfg/AgentLayer.cfg
-  cfg/AgentVLayer.cfg
-)
-
-catkin_package(
-  INCLUDE_DIRS include
-  LIBRARIES  cohan_layers
-  CATKIN_DEPENDS angles costmap_2d dynamic_reconfigure geometry_msgs cohan_msgs pluginlib roscpp rospy
-)
-
-include_directories(
-  include
-  ${catkin_INCLUDE_DIRS}
-)
-
-add_library(cohan_layers
+add_library(${PROJECT_NAME} SHARED
   src/agent_layer.cpp
   src/static_agent_layer.cpp
   src/agent_visibility_layer.cpp
 )
 
+target_include_directories(${PROJECT_NAME} PUBLIC
+  $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+  $<INSTALL_INTERFACE:include>
+  ${EIGEN3_INCLUDE_DIRS}
+)
 
-add_dependencies(cohan_layers  ${${PROJECT_NAME}_EXPORTED_TARGETS} ${catkin_EXPORTED_TARGETS})
-target_link_libraries(cohan_layers  ${catkin_LIBRARIES})
+ament_target_dependencies(${PROJECT_NAME} ${dependencies})
 
-if(CATKIN_ENABLE_TESTING)
-  find_package(catkin REQUIRED COMPONENTS roslint)
-  roslint_cpp()
-  roslint_add_test()
-endif()
+install(TARGETS ${PROJECT_NAME}
+  ARCHIVE DESTINATION lib
+  LIBRARY DESTINATION lib
+  RUNTIME DESTINATION bin
+)
+
+install(DIRECTORY include/
+  DESTINATION include/
+)
 
 install(FILES costmap_plugins.xml
-        DESTINATION ${CATKIN_PACKAGE_SHARE_DESTINATION}
+  DESTINATION share/${PROJECT_NAME}
 )
 
+pluginlib_export_plugin_description_file(nav2_costmap_2d costmap_plugins.xml)
 
-install(TARGETS cohan_layers
-        LIBRARY DESTINATION ${CATKIN_PACKAGE_LIB_DESTINATION}
-        ARCHIVE DESTINATION ${CATKIN_PACKAGE_LIB_DESTINATION}
-        RUNTIME DESTINATION ${CATKIN_GLOBAL_BIN_DESTINATION}
-)
+ament_export_include_directories(include)
+ament_export_libraries(${PROJECT_NAME})
+ament_export_dependencies(${dependencies})
 
-install(
-    DIRECTORY include/${PROJECT_NAME}/
-    DESTINATION ${CATKIN_PACKAGE_INCLUDE_DESTINATION}
-)
+ament_package()

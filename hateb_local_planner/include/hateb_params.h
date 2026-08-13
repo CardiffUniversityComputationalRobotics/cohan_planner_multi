@@ -35,12 +35,14 @@ namespace hateb_local_planner
     double max_vel_x = 0.5;
     double max_vel_y = 0.0;
     double max_vel_theta = 1.2;
-    // 0 = forward-only. The robot may drive forward and rotate/steer, never
-    // reverse. Enforced in three places, because the optimizer's constraints are
-    // soft and can be violated: this bound in EdgeVelocity, the
-    // weight_kinematics_forward_drive term below, and a hard clamp in
-    // saturateVelocity(). Set > 0 to allow limited reversing again.
-    double max_vel_x_backwards = 0.0;
+    // Upstream default. Forward-only (0.0) was tried and reverted: pose 0 of the
+    // band is pinned to the robot's current position AND orientation, so when
+    // the path leaves from behind the robot the optimizer's only options are to
+    // reverse or to turn in place. Forbidding reverse left it oscillating in
+    // yaw instead of committing, because single-band TEB has no
+    // deletePlansDetouringBackwards() filter to reject a backward start the way
+    // HomotopyClassPlanner does.
+    double max_vel_x_backwards = 0.2;
     double acc_lim_x = 0.5;
     double acc_lim_y = 0.0;
     double acc_lim_theta = 0.5;
@@ -92,11 +94,11 @@ namespace hateb_local_planner
     // stops the optimizer producing sideways motion between poses. It has to
     // dominate the soft costs, hence 1000 rather than an O(1) value.
     double weight_kinematics_nh = 1000.0;
-    // Penalises a pose-to-pose step pointing behind the robot's heading
-    // (EdgeKinematicsDiffDrive _error[1]). At the upstream 1.0 it merely
-    // *prefers* forward motion; raised to match weight_kinematics_nh so
-    // forward-only is effectively a hard constraint in the optimizer.
-    double weight_kinematics_forward_drive = 1000.0;
+    // Upstream default. Prefers forward motion without forbidding a reversal.
+    // Raising this to 1000 to force forward-only made the optimizer fight
+    // itself when the goal was behind the robot; reverted with
+    // max_vel_x_backwards above.
+    double weight_kinematics_forward_drive = 1.0;
     double weight_kinematics_turning_radius = 1.0;
 
     double weight_optimaltime = 1.0;
@@ -193,7 +195,21 @@ namespace hateb_local_planner
     // optimizes a band in each, then commits to the cheapest with hysteresis.
     // This is what lets the planner commit to threading a narrow gap instead of
     // sitting in the saddle between two equally good options and oscillating.
-    bool enable_homotopy_class_planning = true;
+    // OFF deliberately. HomotopyClassPlanner optimizes its candidate bands by
+    // calling optimizeTEB() directly and never calls TebOptimalPlanner::plan(),
+    // which is the only place agents_tebs_map_ is populated. Under HCP every
+    // time-aware edge - AgentRobotSafety, AgentRobotTTC, AgentRobotTTCplus,
+    // AgentRobotRelVelocity, AgentAgentSafety, AgentRobotVisibility - iterates
+    // an empty map and contributes nothing, leaving only timeless geometric
+    // avoidance via the costmap. Upstream has the same limitation.
+    //
+    // Trade-off: this gives up homotopy exploration, so the planner can once
+    // again stall in narrow passages where a single band sits in the saddle
+    // between two equally good ways around an obstacle. Oscillation recovery
+    // and reduced-horizon backup are still active and partly cover that.
+    // Set true only if you want narrow-passage robustness INSTEAD of
+    // human-aware planning; you cannot currently have both.
+    bool enable_homotopy_class_planning = false;
     bool enable_multithreading = true;
     bool simple_exploration = false;
     int max_number_classes = 5;

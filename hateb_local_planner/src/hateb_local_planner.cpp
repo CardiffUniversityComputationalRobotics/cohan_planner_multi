@@ -49,6 +49,7 @@
 
 // Custom / External Messages
 #include <cohan_msgs/msg/state_array.hpp>
+#include <cohan_msgs/msg/tracked_agents.hpp>
 #include <tidup_move_base_msgs/msg/agent_states_prediction.hpp>
 #include <esc_move_base_msgs/msg/path2_d.hpp>
 
@@ -124,6 +125,9 @@ private:
     // ! PUBLISHERS
     rclcpp::Publisher<std_msgs::msg::Bool>::SharedPtr goal_reached_pub_;
     rclcpp::Publisher<cohan_msgs::msg::OptimizationCostArray>::SharedPtr op_costs_pub_;
+    // Consumed by the cohan_layers costmap layers.
+    rclcpp::Publisher<cohan_msgs::msg::TrackedAgents>::SharedPtr tracked_agents_pub_;
+    rclcpp::Publisher<cohan_msgs::msg::StateArray>::SharedPtr agents_states_pub_;
     rclcpp::Publisher<std_msgs::msg::Bool>::SharedPtr stop_motion_pub_;
     rclcpp::Publisher<geometry_msgs::msg::PoseStamped>::SharedPtr query_goal_pose_rviz_pub_;
     rclcpp::Publisher<visualization_msgs::msg::Marker>::SharedPtr query_goal_radius_rviz_pub_;
@@ -155,6 +159,7 @@ private:
     double max_vel_x_backwards_ = hateb_local_planner::params().max_vel_x_backwards;
 
     double max_trans_vel_, max_rot_vel_;
+    bool use_agent_obstacles_ = true;
 
     std::string robot_base_frame_;
     std::string world_frame_;
@@ -312,6 +317,10 @@ HATEBPlanningFramework::HATEBPlanningFramework()
     // min_obstacle_dist) of clearance on each side to find any feasible band.
     this->declare_parameter("min_obstacle_dist", rclcpp::ParameterValue(hateb_local_planner::params().min_obstacle_dist));
     this->declare_parameter("inflation_dist", rclcpp::ParameterValue(hateb_local_planner::params().inflation_dist));
+    // Inject tracked agents into the planner's own obstacle container. Set false
+    // when using the cohan_layers costmap layers instead, so people are not
+    // counted twice (once by the layer, once here).
+    this->declare_parameter("use_agent_obstacles", rclcpp::ParameterValue(true));
 
     // ! GET PARAMETERS
     world_frame_ = this->get_parameter("world_frame").as_string();
@@ -337,6 +346,7 @@ HATEBPlanningFramework::HATEBPlanningFramework()
     hateb_local_planner::params().agent_radius = agent_radius_;
     hateb_local_planner::params().min_obstacle_dist = this->get_parameter("min_obstacle_dist").as_double();
     hateb_local_planner::params().inflation_dist = this->get_parameter("inflation_dist").as_double();
+    use_agent_obstacles_ = this->get_parameter("use_agent_obstacles").as_bool();
 
     RCLCPP_INFO(this->get_logger(),
                 "Obstacle clearance: robot_radius %.2f + min_obstacle_dist %.2f -> needs %.2f m half-width "
@@ -375,6 +385,11 @@ HATEBPlanningFramework::HATEBPlanningFramework()
     // publishing them is the only way to see which edge is dominating when the
     // robot refuses to move.
     op_costs_pub_ = this->create_publisher<cohan_msgs::msg::OptimizationCostArray>("optimization_costs", 1);
+    // The cohan_layers costmap layers consume these. Nothing else in this
+    // stack publishes them - the pedsim -> TrackedAgents conversion happens
+    // here, in agentsCallback().
+    tracked_agents_pub_ = this->create_publisher<cohan_msgs::msg::TrackedAgents>("/tracked_agents", 1);
+    agents_states_pub_ = this->create_publisher<cohan_msgs::msg::StateArray>("/agents_states", 1);
 
     goal_reached_pub_ = this->create_publisher<std_msgs::msg::Bool>("goal_reached", 1);
     stop_motion_pub_ = this->create_publisher<std_msgs::msg::Bool>("stop_motion", 1);
@@ -388,6 +403,18 @@ HATEBPlanningFramework::HATEBPlanningFramework()
     costmap_ros_ = std::make_shared<nav2_costmap_2d::Costmap2DROS>("local_costmap");
     costmap_ros_->on_configure(rclcpp_lifecycle::State());
     costmap_ros_->on_activate(rclcpp_lifecycle::State());
+
+    // Adopt the costmap's tf buffer and drop our own. Costmap2DROS builds a
+    // buffer + listener bound to its own node and spins them on its own
+    // executor thread; that one demonstrably resolves map/odom/base_footprint.
+    // Ours was built with the TransformListener(buffer) overload, which spins a
+    // detached internal node - it never populated, so every lookup here failed
+    // with "map ... does not exist" and transformAgentPlan() dropped every
+    // predicted agent plan before it could become a timed band.
+    // Reset the listener BEFORE reassigning the buffer: it holds a reference to
+    // the buffer it was constructed with.
+    tf_listener_.reset();
+    tf_buffer_ = costmap_ros_->getTfBuffer();
 
     costmap_ = costmap_ros_->getCostmap();
 
@@ -590,7 +617,11 @@ void HATEBPlanningFramework::agentsCallback(const pedsim_msgs::msg::AgentStates:
 
         // Segment conversion
         cohan_msgs::msg::TrackedSegment segment;
-        segment.type = 0; // DEFAULT_AGENT_SEGMENT
+        // Must be TORSO (1), not 0 (which is HEAD). Everything downstream keys
+        // off DEFAULT_AGENT_SEGMENT == TORSO: the agent processing loop below,
+        // and the cohan_layers costmap layer. Publishing 0 meant every one of
+        // those filters silently rejected every agent.
+        segment.type = DEFAULT_AGENT_SEGMENT;
         segment.pose.pose.position = agent.pose.position;
         segment.pose.pose.orientation = agent.pose.orientation;
         segment.twist.twist.linear = agent.twist.linear;
@@ -602,13 +633,29 @@ void HATEBPlanningFramework::agentsCallback(const pedsim_msgs::msg::AgentStates:
 
     tracked_agents_ = converted_tracked_agents;
 
+    // Publish here, BEFORE the lookupTransform below, which throws whenever the
+    // robot transform is briefly unavailable. Publishing at the end of this
+    // callback meant one failed lookup dropped the whole message, and the
+    // cohan_layers costmap layer then saw zero agents forever.
+    tracked_agents_pub_->publish(tracked_agents_);
+
     std::vector<double> agent_dists;
     std::vector<double> agents_behind;
     std::vector<double> agents_radii;
     geometry_msgs::msg::TransformStamped transformed_stamped;
     std::string base_link = "base_footprint";
 
-    transformed_stamped = tf_buffer_->lookupTransform("map", base_link, tf2::TimePointZero, tf2::durationFromSec(0.5));
+    try
+    {
+        transformed_stamped = tf_buffer_->lookupTransform("map", base_link, tf2::TimePointZero, tf2::durationFromSec(0.5));
+    }
+    catch (const tf2::TransformException &ex)
+    {
+        RCLCPP_WARN_THROTTLE(this->get_logger(), *this->get_clock(), 2000,
+                             "agentsCallback: cannot transform map->%s (%s); skipping robot-relative agent processing this cycle",
+                             base_link.c_str(), ex.what());
+        return;
+    }
     auto xpos = transformed_stamped.transform.translation.x;
     auto ypos = transformed_stamped.transform.translation.y;
     auto ryaw = tf2::getYaw(transformed_stamped.transform.rotation);
@@ -664,6 +711,10 @@ void HATEBPlanningFramework::agentsCallback(const pedsim_msgs::msg::AgentStates:
         itr++;
     }
     RCLCPP_INFO_ONCE(this->get_logger(), "Number of agents: %zu", agent_vels_.size());
+
+    // Feed the cohan_layers costmap layers.
+    tracked_agents_pub_->publish(tracked_agents_);
+    agents_states_pub_->publish(agents_states_);
 
     agent_still_.clear();
     for (int i = 0; i < prev_tracked_agents_.agents.size(); i++)
@@ -1154,11 +1205,18 @@ uint32_t HATEBPlanningFramework::computeVelocityCommands(geometry_msgs::msg::Twi
     // min_obstacle_dist clearance applies. Agents that DO have a predicted band
     // are left alone - the agent-robot edges already handle those, and pinning
     // them as static obstacles would fight their own prediction.
-    for (std::size_t i = 0; i < agents_.size() && i < tracked_agents_.agents.size(); ++i)
+    for (std::size_t i = 0; use_agent_obstacles_ && i < agents_.size() && i < tracked_agents_.agents.size(); ++i)
     {
         auto it = transformed_agent_plan_vel_map.find(tracked_agents_.agents[i].track_id);
         bool has_predicted_band = (it != transformed_agent_plan_vel_map.end() && it->second.plan.size() > 1);
-        if (has_predicted_band)
+
+        // A predicted band only protects anyone if the active planner actually
+        // consumes it. HomotopyClassPlanner does not: it optimizes its candidate
+        // bands directly and never calls TebOptimalPlanner::plan(), so
+        // agents_tebs_map_ stays empty and every agent-robot edge iterates
+        // nothing. Under HCP, inject every agent as an obstacle.
+        bool bands_are_used = !hateb_local_planner::params().enable_homotopy_class_planning;
+        if (bands_are_used && has_predicted_band)
             continue;
 
         // Skip anyone well outside the local horizon (the 4 m costmap bounds the
@@ -1277,9 +1335,18 @@ uint32_t HATEBPlanningFramework::computeVelocityCommands(geometry_msgs::msg::Twi
     }
 
     // Saturate velocity, if the optimization results violates the constraints (could be possible due to soft constraints).
+    double raw_vx = cmd_vel.twist.linear.x, raw_omega = cmd_vel.twist.angular.z;
     saturateVelocity(cmd_vel.twist.linear.x, cmd_vel.twist.linear.y, cmd_vel.twist.angular.z,
                      max_trans_vel_, max_vel_y_, max_rot_vel_,
                      max_vel_x_backwards_);
+
+    // Reverse is allowed again (max_vel_x_backwards > 0), so the optimizer is
+    // free to back out when the path leaves from behind the robot instead of
+    // oscillating in yaw. Nothing overrides the band's command here.
+    RCLCPP_INFO_THROTTLE(this->get_logger(), *this->get_clock(), 2000,
+                         "cmd: raw v=%.3f w=%.3f -> sent v=%.3f w=%.3f (mode=%d, agents=%zu)",
+                         raw_vx, raw_omega, cmd_vel.twist.linear.x, cmd_vel.twist.angular.z,
+                         is_mode_, transformed_agent_plan_vel_map.size());
 
     // a feasible solution should be found, reset counter
     no_infeasible_plans_ = 0;
@@ -1310,7 +1377,12 @@ bool HATEBPlanningFramework::pruneGlobalPlan(const geometry_msgs::msg::PoseStamp
     try
     {
         // transform robot pose into the plan frame (we do not wait here, since pruning not crucial, if missed a few times)
-        geometry_msgs::msg::TransformStamped global_to_plan_transform = tf_buffer_->lookupTransform("map", "map", rclcpp::Time(0));
+        geometry_msgs::msg::TransformStamped global_to_plan_transform;
+        // Identity. Upstream looked up plan_frame -> global_frame here; this port
+        // hardcoded both sides to "map", so it was asking tf for a no-op that can
+        // only fail - and it did, with 'map ... does not exist', which made
+        // transformAgentPlan() drop every predicted agent plan.
+        global_to_plan_transform.transform.rotation.w = 1.0;
 
         geometry_msgs::msg::PoseStamped robot;
         tf2::doTransform(global_pose, robot, global_to_plan_transform);
@@ -1366,12 +1438,16 @@ bool HATEBPlanningFramework::transformGlobalPlan(const std::vector<geometry_msgs
         }
 
         // get plan_to_global_transform from plan frame to global_frame
-        geometry_msgs::msg::TransformStamped plan_to_global_transform = tf_buffer_->lookupTransform("map",
-                                                                                                    "map", tf2::TimePointZero, tf2::durationFromSec(0.5));
+        geometry_msgs::msg::TransformStamped plan_to_global_transform;
+        // Identity. Upstream looked up plan_frame -> global_frame here; this port
+        // hardcoded both sides to "map", so it was asking tf for a no-op that can
+        // only fail - and it did, with 'map ... does not exist', which made
+        // transformAgentPlan() drop every predicted agent plan.
+        plan_to_global_transform.transform.rotation.w = 1.0;
 
         // let's get the pose of the robot in the frame of the plan
         geometry_msgs::msg::PoseStamped robot_pose;
-        robot_pose = tf_buffer_->transform(global_pose, "map", tf2::durationFromSec(0.05));
+        robot_pose = global_pose; // already in "map"; transforming map->map is a no-op
 
         // we'll discard points on the plan that are outside the local costmap
         double dist_threshold = std::max(costmap.getSizeInCellsX() * costmap.getResolution() / 2.0,
@@ -1583,11 +1659,19 @@ void HATEBPlanningFramework::saturateVelocity(double &vx, double &vy, double &om
         if ((now - last_omega_sign_change_).seconds() <
             omega_chage_time_seperation_)
         {
-            // do not allow sign change
+            // Do not allow sign change. Deliberately do NOT refresh
+            // last_omega_sign_change_ here: resetting the window on a
+            // *suppressed* change makes it self-perpetuating, so a robot that
+            // keeps wanting to flip has its rotation pinned to +/-0.02 forever
+            // and can never turn around. Only an allowed change starts a new
+            // window.
             omega = std::copysign(min_vel_theta, omega);
         }
-        last_omega_sign_change_ = now;
-        last_omega_ = omega;
+        else
+        {
+            last_omega_sign_change_ = now;
+            last_omega_ = omega;
+        }
     }
 }
 
@@ -1655,8 +1739,9 @@ bool HATEBPlanningFramework::transformAgentPlan(
 
         // get agent_plan_to_global_transform from plan frame to global_frame
         geometry_msgs::msg::TransformStamped agent_plan_to_global_transform;
-        agent_plan_to_global_transform = tf_buffer_->lookupTransform("map", "map",
-                                                                     tf2::TimePointZero, tf2::durationFromSec(0.5));
+        // Identity - see note above; this lookup was the source of the
+        // "map ... does not exist" spam.
+        agent_plan_to_global_transform.transform.rotation.w = 1.0;
         tf2::Stamped<tf2::Transform> agent_plan_to_global_transform_;
         tf2::fromMsg(agent_plan_to_global_transform, agent_plan_to_global_transform_);
 

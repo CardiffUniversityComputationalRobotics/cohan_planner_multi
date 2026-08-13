@@ -70,8 +70,14 @@ int main()
   // HSignature asserts this at runtime; catch it here instead of mid-run.
   assert(p.h_signature_prescaler > 0.1 && p.h_signature_prescaler <= 1.0);
 
-  std::printf("hateb params sanity: OK (worst obstacle cost %.4f, min passage %.2f m, hcp %s)\n",
-              worst_cost, 2.0 * (0.3 + p.min_obstacle_dist),
-              p.enable_homotopy_class_planning ? "on" : "off");
+  // Homotopy class planning and the human-aware constraints are mutually
+  // exclusive here: HCP never populates agents_tebs_map_, so every time-aware
+  // agent edge iterates an empty container. Make which one is live explicit,
+  // because both configurations "work" and only one is socially aware.
+  std::printf("hateb params sanity: OK (worst obstacle cost %.4f, min passage %.2f m)\n",
+              worst_cost, 2.0 * (0.3 + p.min_obstacle_dist));
+  std::printf("  homotopy class planning : %s\n", p.enable_homotopy_class_planning ? "ON" : "off");
+  std::printf("  time-aware agent edges  : %s\n",
+              p.enable_homotopy_class_planning ? "INERT (HCP leaves agents_tebs_map_ empty)" : "active");
   return 0;
 }

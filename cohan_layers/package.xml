@@ -1,29 +1,31 @@
 <?xml version="1.0"?>
-<package format="2">
+<?xml-model href="http://download.ros.org/schema/package_format3.xsd" schematypens="http://www.w3.org/2001/XMLSchema"?>
+<package format="3">
   <name>cohan_layers</name>
   <version>0.0.1</version>
-  <description>The cohan_layers package</description>
+  <description>Costmap layers that write tracked agents (humans) into the nav2 costmap</description>
 
   <maintainer email="ptsingaman@laas.fr">Phani Teja Singamaneni</maintainer>
-
-  <author email="ptsingaman@laas.fr">Phani Teja Singamaneni</author>
-
   <license>BSD</license>
 
-  <buildtool_depend>catkin</buildtool_depend>
-  <build_depend>costmap_2d</build_depend>
-  <exec_depend>costmap_2d</exec_depend>
+  <buildtool_depend>ament_cmake</buildtool_depend>
+
   <depend>angles</depend>
-  <depend>dynamic_reconfigure</depend>
-  <depend>geometry_msgs</depend>
   <depend>cohan_msgs</depend>
+  <depend>geometry_msgs</depend>
+  <depend>nav2_costmap_2d</depend>
   <depend>pluginlib</depend>
-  <depend>roscpp</depend>
-  <depend>rospy</depend>
-  <test_depend>roslint</test_depend>
+  <depend>rclcpp</depend>
+  <depend>std_msgs</depend>
+  <depend>std_srvs</depend>
+  <depend>tf2</depend>
+  <depend>tf2_geometry_msgs</depend>
+  <depend>tf2_ros</depend>
+
+  <test_depend>ament_lint_auto</test_depend>
 
   <export>
-      <costmap_2d plugin="${prefix}/costmap_plugins.xml"/>
+    <build_type>ament_cmake</build_type>
+    <nav2_costmap_2d plugin="${prefix}/costmap_plugins.xml" />
   </export>
-
 </package>
