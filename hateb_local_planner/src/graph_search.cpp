@@ -36,6 +36,7 @@
  * Authors: Christoph Rösmann, Franz Albers
  *********************************************************************/
 
+#include <boost/bind/bind.hpp>
 #include <graph_search.h>
 #include <homotopy_class_planner.h>
 
@@ -43,11 +44,11 @@ namespace hateb_local_planner
 {
 
   void GraphSearchInterface::DepthFirst(HcGraph &g, std::vector<HcGraphVertexType> &visited, const HcGraphVertexType &goal, double start_orientation,
-                                        double goal_orientation, const geometry_msgs::Twist *start_velocity, double dt_ref)
+                                        double goal_orientation, const geometry_msgs::msg::Twist *start_velocity, double dt_ref)
   {
     // see http://www.technical-recipes.com/2011/a-recursive-algorithm-to-find-all-paths-between-two-given-nodes/ for details on finding all simple paths
 
-    if ((int)hcp_->getTrajectoryContainer().size() >= cfg_->hcp.max_number_classes)
+    if ((int)hcp_->getTrajectoryContainer().size() >= params().max_number_classes)
       return; // We do not need to search for further possible alternative homotopy classes.
 
     HcGraphVertexType back = visited.back();
@@ -65,7 +66,7 @@ namespace hateb_local_planner
         // double dt_ref = 0.4;
 
         // Add new TEB, if this path belongs to a new homotopy class
-        hcp_->addAndInitNewTeb(visited.begin(), visited.end(), boost::bind(getVector2dFromHcGraph, _1, boost::cref(graph_)),
+        hcp_->addAndInitNewTeb(visited.begin(), visited.end(), boost::bind(getVector2dFromHcGraph, boost::placeholders::_1, boost::cref(graph_)),
                                start_orientation, goal_orientation, start_velocity, dt_ref);
 
         visited.pop_back();
@@ -88,21 +89,21 @@ namespace hateb_local_planner
     }
   }
 
-  void lrKeyPointGraph::createGraph(const PoseSE2 &start, const PoseSE2 &goal, double dist_to_obst, double obstacle_heading_threshold, const geometry_msgs::Twist *start_velocity, double dt_ref)
+  void lrKeyPointGraph::createGraph(const PoseSE2 &start, const PoseSE2 &goal, double dist_to_obst, double obstacle_heading_threshold, const geometry_msgs::msg::Twist *start_velocity, double dt_ref)
   {
     // Clear existing graph and paths
     clearGraph();
-    if ((int)hcp_->getTrajectoryContainer().size() >= cfg_->hcp.max_number_classes)
+    if ((int)hcp_->getTrajectoryContainer().size() >= params().max_number_classes)
       return;
     // Direction-vector between start and goal and normal-vector:
     Eigen::Vector2d diff = goal.position() - start.position();
 
-    if (diff.norm() < cfg_->goal_tolerance.xy_goal_tolerance)
+    if (diff.norm() < params().xy_goal_tolerance)
     {
-      ROS_DEBUG("HomotopyClassPlanner::createProbRoadmapGraph(): xy-goal-tolerance already reached.");
+      RCLCPP_DEBUG(rclcpp::get_logger("hateb_local_planner"), "HomotopyClassPlanner::createProbRoadmapGraph(): xy-goal-tolerance already reached.");
       if (hcp_->getTrajectoryContainer().empty())
       {
-        ROS_INFO("HomotopyClassPlanner::createProbRoadmapGraph(): Initializing a small straight line to just correct orientation errors.");
+        RCLCPP_INFO(rclcpp::get_logger("hateb_local_planner"), "HomotopyClassPlanner::createProbRoadmapGraph(): Initializing a small straight line to just correct orientation errors.");
         hcp_->addAndInitNewTeb(start, goal, start_velocity, dt_ref);
       }
       return;
@@ -177,7 +178,7 @@ namespace hateb_local_planner
             // check angle
             if (start_orient_vec.dot(keypoint_dist) <= obstacle_heading_threshold)
             {
-              ROS_DEBUG("createGraph() - deleted edge: limit_obstacle_heading");
+              RCLCPP_DEBUG(rclcpp::get_logger("hateb_local_planner"), "createGraph() - deleted edge: limit_obstacle_heading");
               continue;
             }
           }
@@ -211,22 +212,22 @@ namespace hateb_local_planner
     DepthFirst(graph_, visited, goal_vtx, start.theta(), goal.theta(), start_velocity, dt_ref);
   }
 
-  void ProbRoadmapGraph::createGraph(const PoseSE2 &start, const PoseSE2 &goal, double dist_to_obst, double obstacle_heading_threshold, const geometry_msgs::Twist *start_velocity, double dt_ref)
+  void ProbRoadmapGraph::createGraph(const PoseSE2 &start, const PoseSE2 &goal, double dist_to_obst, double obstacle_heading_threshold, const geometry_msgs::msg::Twist *start_velocity, double dt_ref)
   {
     // Clear existing graph and paths
     clearGraph();
-    if ((int)hcp_->getTrajectoryContainer().size() >= cfg_->hcp.max_number_classes)
+    if ((int)hcp_->getTrajectoryContainer().size() >= params().max_number_classes)
       return;
     // Direction-vector between start and goal and normal-vector:
     Eigen::Vector2d diff = goal.position() - start.position();
     double start_goal_dist = diff.norm();
 
-    if (start_goal_dist < cfg_->goal_tolerance.xy_goal_tolerance)
+    if (start_goal_dist < params().xy_goal_tolerance)
     {
-      ROS_DEBUG("HomotopyClassPlanner::createProbRoadmapGraph(): xy-goal-tolerance already reached.");
+      RCLCPP_DEBUG(rclcpp::get_logger("hateb_local_planner"), "HomotopyClassPlanner::createProbRoadmapGraph(): xy-goal-tolerance already reached.");
       if (hcp_->getTrajectoryContainer().empty())
       {
-        ROS_INFO("HomotopyClassPlanner::createProbRoadmapGraph(): Initializing a small straight line to just correct orientation errors.");
+        RCLCPP_INFO(rclcpp::get_logger("hateb_local_planner"), "HomotopyClassPlanner::createProbRoadmapGraph(): Initializing a small straight line to just correct orientation errors.");
         hcp_->addAndInitNewTeb(start, goal, start_velocity, dt_ref);
       }
       return;
@@ -237,17 +238,17 @@ namespace hateb_local_planner
     // Now sample vertices between start, goal and a specified width between both sides
     // Let's start with a square area between start and goal (maybe change it later to something like a circle or whatever)
 
-    double area_width = cfg_->hcp.roadmap_graph_area_width;
+    double area_width = params().roadmap_graph_area_width;
 
-    boost::random::uniform_real_distribution<double> distribution_x(0, start_goal_dist * cfg_->hcp.roadmap_graph_area_length_scale);
+    boost::random::uniform_real_distribution<double> distribution_x(0, start_goal_dist * params().roadmap_graph_area_length_scale);
     boost::random::uniform_real_distribution<double> distribution_y(0, area_width);
 
     double phi = atan2(diff.coeffRef(1), diff.coeffRef(0)); // rotate area by this angle
     Eigen::Rotation2D<double> rot_phi(phi);
 
     Eigen::Vector2d area_origin;
-    if (cfg_->hcp.roadmap_graph_area_length_scale != 1.0)
-      area_origin = start.position() + 0.5 * (1.0 - cfg_->hcp.roadmap_graph_area_length_scale) * start_goal_dist * diff.normalized() - 0.5 * area_width * normal; // bottom left corner of the origin
+    if (params().roadmap_graph_area_length_scale != 1.0)
+      area_origin = start.position() + 0.5 * (1.0 - params().roadmap_graph_area_length_scale) * start_goal_dist * diff.normalized() - 0.5 * area_width * normal; // bottom left corner of the origin
     else
       area_origin = start.position() - 0.5 * area_width * normal; // bottom left corner of the origin
 
@@ -257,7 +258,7 @@ namespace hateb_local_planner
     diff.normalize(); // normalize in place
 
     // Start sampling
-    for (int i = 0; i < cfg_->hcp.roadmap_graph_no_samples; ++i)
+    for (int i = 0; i < params().roadmap_graph_no_samples; ++i)
     {
       Eigen::Vector2d sample;
       //     bool coll_free;

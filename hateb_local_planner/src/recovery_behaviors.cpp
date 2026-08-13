@@ -37,7 +37,8 @@
  *********************************************************************/
 
 #include <recovery_behaviors.h>
-#include <ros/ros.h>
+#include <misc.h>
+
 #include <limits>
 #include <functional>
 #include <numeric>
@@ -45,10 +46,16 @@
 
 namespace hateb_local_planner
 {
+  namespace
+  {
+    // g2o::sign is absent from the g2o build used here; same semantics (0 -> 0).
+    inline int sgn(double x) { return x > 0 ? 1 : (x < 0 ? -1 : 0); }
+  } // namespace
+
 
     // ============== FailureDetector Implementation ===================
 
-    void FailureDetector::update(const geometry_msgs::Twist &twist, double v_max, double v_backwards_max, double omega_max, double v_eps, double omega_eps)
+    void FailureDetector::update(const geometry_msgs::msg::Twist &twist, double v_max, double v_backwards_max, double omega_max, double v_eps, double omega_eps)
     {
         if (buffer_.capacity() == 0)
             return;
@@ -99,7 +106,7 @@ namespace hateb_local_planner
         {
             v_mean += buffer_[i].v;
             omega_mean += buffer_[i].omega;
-            if (i > 0 && g2o::sign(buffer_[i].omega) != g2o::sign(buffer_[i - 1].omega))
+            if (i > 0 && sgn(buffer_[i].omega) != sgn(buffer_[i - 1].omega))
                 ++omega_zero_crossings;
         }
         v_mean /= n;

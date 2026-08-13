@@ -52,11 +52,10 @@
 #include <geometry_msgs/msg/point.hpp>
 #include <std_msgs/msg/color_rgba.hpp>
 
-#include <ros/console.h>
-#include <ros/ros.h>
+#include <rclcpp/rclcpp.hpp>
 
 #include <planner_interface.h>
-#include <hateb_config.h>
+#include <hateb_params.h>
 #include <obstacles.h>
 #include <optimal_planner.h>
 #include <visualization.h>
@@ -73,8 +72,8 @@ namespace hateb_local_planner
     return std::complex<long double>(pose->x(), pose->y());
   };
 
-  //!< Inline function used for calculateHSignature() in combination with geometry_msgs::PoseStamped
-  inline std::complex<long double> getCplxFromMsgPoseStamped(const geometry_msgs::PoseStamped &pose)
+  //!< Inline function used for calculateHSignature() in combination with geometry_msgs::msg::PoseStamped
+  inline std::complex<long double> getCplxFromMsgPoseStamped(const geometry_msgs::msg::PoseStamped &pose)
   {
     return std::complex<long double>(pose.pose.position.x, pose.pose.position.y);
   };
@@ -121,7 +120,7 @@ namespace hateb_local_planner
      * @param visualization Shared pointer to the TebVisualization class (optional)
      * @param via_points Container storing via-points (optional)
      */
-    HomotopyClassPlanner(const HATebConfig &cfg, ObstContainer *obstacles = NULL, RobotFootprintModelPtr robot_model = boost::make_shared<PointRobotFootprint>(),
+    HomotopyClassPlanner(ObstContainer *obstacles = NULL, RobotFootprintModelPtr robot_model = boost::make_shared<PointRobotFootprint>(),
                          TebVisualizationPtr visualization = TebVisualizationPtr(), const ViaPointContainer *via_points = NULL, CircularRobotFootprintPtr agent_model = NULL, const std::map<uint64_t, ViaPointContainer> *agents_via_points_map = NULL);
 
     /**
@@ -137,7 +136,7 @@ namespace hateb_local_planner
      * @param visualization Shared pointer to the TebVisualization class (optional)
      * @param via_points Container storing via-points (optional)
      */
-    void initialize(const HATebConfig &cfg, ObstContainer *obstacles = NULL, RobotFootprintModelPtr robot_model = boost::make_shared<PointRobotFootprint>(),
+    void initialize(ObstContainer *obstacles = NULL, RobotFootprintModelPtr robot_model = boost::make_shared<PointRobotFootprint>(),
                     TebVisualizationPtr visualization = TebVisualizationPtr(), const ViaPointContainer *via_points = NULL, CircularRobotFootprintPtr agent_model = NULL, const std::map<uint64_t, ViaPointContainer> *agents_via_points_map = NULL);
 
     /** @name Plan a trajectory */
@@ -149,33 +148,33 @@ namespace hateb_local_planner
      * Provide this method to create and optimize a trajectory that is initialized
      * according to an initial reference plan (given as a container of poses).
      * @warning The current implementation extracts only the start and goal pose and calls the overloaded plan()
-     * @param initial_plan vector of geometry_msgs::PoseStamped (must be valid until clearPlanner() is called!)
+     * @param initial_plan vector of geometry_msgs::msg::PoseStamped (must be valid until clearPlanner() is called!)
      * @param start_vel Current start velocity (e.g. the velocity of the robot, only linear.x, linear.y (holonomic) and angular.z are used)
      * @param free_goal_vel if \c true, a nonzero final velocity at the goal pose is allowed,
      *		      otherwise the final velocity will be zero (default: false)
      * @return \c true if planning was successful, \c false otherwise
      */
-    virtual bool plan(const std::vector<geometry_msgs::PoseStamped> &initial_plan,
-                      const geometry_msgs::Twist *start_vel = NULL,
+    virtual bool plan(const std::vector<geometry_msgs::msg::PoseStamped> &initial_plan,
+                      const geometry_msgs::msg::Twist *start_vel = NULL,
                       bool free_goal_vel = false,
                       const AgentPlanVelMap *initial_agent_plan_vels = NULL,
-                      hateb_local_planner::OptimizationCostArray *op_costs = NULL,
+                      cohan_msgs::msg::OptimizationCostArray *op_costs = NULL,
                       double dt_ref = 0.4,
                       double dt_hyst = 0.1,
                       int Mode = 0);
 
     /**
-     * @brief Plan a trajectory between a given start and goal pose (tf::Pose version).
+     * @brief Plan a trajectory between a given start and goal pose (geometry_msgs::msg::Pose version).
      *
      * Provide this method to create and optimize a trajectory that is initialized between a given start and goal pose.
-     * @param start tf::Pose containing the start pose of the trajectory
-     * @param goal tf::Pose containing the goal pose of the trajectory
+     * @param start geometry_msgs::msg::Pose containing the start pose of the trajectory
+     * @param goal geometry_msgs::msg::Pose containing the goal pose of the trajectory
      * @param start_vel Current start velocity (e.g. the velocity of the robot, only linear.x, linear.y (holonomic) and angular.z are used)
      * @param free_goal_vel if \c true, a nonzero final velocity at the goal pose is allowed,
      *		      otherwise the final velocity will be zero (default: false)
      * @return \c true if planning was successful, \c false otherwise
      */
-    virtual bool plan(const tf::Pose &start, const tf::Pose &goal, const geometry_msgs::Twist *start_vel = NULL, bool free_goal_vel = false, hateb_local_planner::OptimizationCostArray *op_costs = NULL, double dt_ref = 0.4, double dt_hyst = 0.1, int Mode = 0);
+    virtual bool plan(const geometry_msgs::msg::Pose &start, const geometry_msgs::msg::Pose &goal, const geometry_msgs::msg::Twist *start_vel = NULL, bool free_goal_vel = false, cohan_msgs::msg::OptimizationCostArray *op_costs = NULL, double dt_ref = 0.4, double dt_hyst = 0.1, int Mode = 0);
 
     /**
      * @brief Plan a trajectory between a given start and goal pose.
@@ -188,7 +187,7 @@ namespace hateb_local_planner
      *		      otherwise the final velocity will be zero (default: false)
      * @return \c true if planning was successful, \c false otherwise
      */
-    virtual bool plan(const PoseSE2 &start, const PoseSE2 &goal, const geometry_msgs::Twist *start_vel = NULL, bool free_goal_vel = false, double pre_plan_time = 0.0, hateb_local_planner::OptimizationCostArray *op_costs = NULL, double dt_ref = 0.4, double dt_hyst = 0.1, int Mode = 0);
+    virtual bool plan(const PoseSE2 &start, const PoseSE2 &goal, const geometry_msgs::msg::Twist *start_vel = NULL, bool free_goal_vel = false, double pre_plan_time = 0.0, cohan_msgs::msg::OptimizationCostArray *op_costs = NULL, double dt_ref = 0.4, double dt_hyst = 0.1, int Mode = 0);
 
     /**
      * @brief Get the velocity command from a previously optimized plan to control the robot at the current sampling interval.
@@ -225,7 +224,7 @@ namespace hateb_local_planner
      * @return \c true, if the robot footprint along the first part of the trajectory intersects with
      *         any obstacle in the costmap, \c false otherwise.
      */
-    virtual bool isTrajectoryFeasible(base_local_planner::CostmapModel *costmap_model, const std::vector<geometry_msgs::Point> &footprint_spec,
+    virtual bool isTrajectoryFeasible(nav2_costmap_2d::Costmap2D *costmap, const std::vector<geometry_msgs::msg::Point> &footprint_spec,
                                       double inscribed_radius = 0.0, double circumscribed_radius = 0.0, int look_ahead_idx = -1);
 
     /**
@@ -283,7 +282,7 @@ namespace hateb_local_planner
      * @param dist_to_obst Allowed distance to obstacles: if not satisfying, the path will be rejected (note, this is not the distance used for optimization).
      * @param @param start_velocity start velocity (optional)
      */
-    void exploreEquivalenceClassesAndInitTebs(const PoseSE2 &start, const PoseSE2 &goal, double dist_to_obst, const geometry_msgs::Twist *start_vel, double dt_ref);
+    void exploreEquivalenceClassesAndInitTebs(const PoseSE2 &start, const PoseSE2 &goal, double dist_to_obst, const geometry_msgs::msg::Twist *start_vel, double dt_ref);
 
     /**
      * @brief Add a new Teb to the internal trajectory container, if this teb constitutes a new equivalence class. Initialize it using a generic 2D reference path
@@ -300,7 +299,7 @@ namespace hateb_local_planner
      * @return Shared pointer to the newly created teb optimal planner
      */
     template <typename BidirIter, typename Fun>
-    TebOptimalPlannerPtr addAndInitNewTeb(BidirIter path_start, BidirIter path_end, Fun fun_position, double start_orientation, double goal_orientation, const geometry_msgs::Twist *start_velocity, double dt_ref);
+    TebOptimalPlannerPtr addAndInitNewTeb(BidirIter path_start, BidirIter path_end, Fun fun_position, double start_orientation, double goal_orientation, const geometry_msgs::msg::Twist *start_velocity, double dt_ref);
 
     /**
      * @brief Add a new Teb to the internal trajectory container, if this teb constitutes a new equivalence class. Initialize it with a simple straight line between a given start and goal
@@ -309,7 +308,7 @@ namespace hateb_local_planner
      * @param start_velocity start velocity (optional)
      * @return Shared pointer to the newly created teb optimal planner
      */
-    TebOptimalPlannerPtr addAndInitNewTeb(const PoseSE2 &start, const PoseSE2 &goal, const geometry_msgs::Twist *start_velocity, double dt_ref);
+    TebOptimalPlannerPtr addAndInitNewTeb(const PoseSE2 &start, const PoseSE2 &goal, const geometry_msgs::msg::Twist *start_velocity, double dt_ref);
 
     /**
      * @brief Add a new Teb to the internal trajectory container , if this teb constitutes a new equivalence class. Initialize it using a PoseStamped container
@@ -317,7 +316,7 @@ namespace hateb_local_planner
      * @param start_velocity start velocity (optional)
      * @return Shared pointer to the newly created teb optimal planner
      */
-    TebOptimalPlannerPtr addAndInitNewTeb(const std::vector<geometry_msgs::PoseStamped> &initial_plan, const geometry_msgs::Twist *start_velocity, double dt_ref);
+    TebOptimalPlannerPtr addAndInitNewTeb(const std::vector<geometry_msgs::msg::PoseStamped> &initial_plan, const geometry_msgs::msg::Twist *start_velocity, double dt_ref);
 
     /**
      * @brief Update TEBs with new pose, goal and current velocity.
@@ -325,7 +324,7 @@ namespace hateb_local_planner
      * @param goal New goal pose (optional)
      * @param start_velocity start velocity (optional)
      */
-    void updateAllTEBs(const PoseSE2 *start, const PoseSE2 *goal, const geometry_msgs::Twist *start_velocity);
+    void updateAllTEBs(const PoseSE2 *start, const PoseSE2 *goal, const geometry_msgs::msg::Twist *start_velocity);
 
     /**
      * @brief Optimize all available trajectories by invoking the optimizer on each one.
@@ -442,14 +441,13 @@ namespace hateb_local_planner
      */
     bool computeStartOrientation(const TebOptimalPlannerPtr plan, const double len_orientation_vector, double &orientation);
 
-    virtual void getFullTrajectory(std::vector<TrajectoryPointMsg> &trajectory) const;
-    virtual void getFullAgentTrajectory(const uint64_t agent_id, std::vector<TrajectoryPointMsg> &agent_trajectory);
+    virtual void getFullTrajectory(std::vector<cohan_msgs::msg::TrajectoryPointMsg> &trajectory) const;
+    virtual void getFullAgentTrajectory(const uint64_t agent_id, std::vector<cohan_msgs::msg::TrajectoryPointMsg> &agent_trajectory);
 
     /**
      * @brief Access config (read-only)
      * @return const pointer to the config instance
      */
-    const HATebConfig *config() const { return cfg_; }
 
     /**
      * @brief Access current obstacle container (read-only)
@@ -527,7 +525,6 @@ namespace hateb_local_planner
     //@}
 
     // external objects (store weak pointers)
-    const HATebConfig *cfg_;              //!< Config class that stores and manages all related parameters
     ObstContainer *obstacles_;            //!< Store obstacles that are relevant for planning
     const ViaPointContainer *via_points_; //!< Store the current list of via-points
     const std::map<uint64_t, ViaPointContainer> *agents_via_points_map_;
@@ -538,7 +535,7 @@ namespace hateb_local_planner
     RobotFootprintModelPtr robot_model_; //!< Robot model shared instance
     CircularRobotFootprintPtr agent_model_;
 
-    const std::vector<geometry_msgs::PoseStamped> *initial_plan_; //!< Store the initial plan if available for a better trajectory initialization
+    const std::vector<geometry_msgs::msg::PoseStamped> *initial_plan_; //!< Store the initial plan if available for a better trajectory initialization
     EquivalenceClassPtr initial_plan_eq_class_;                   //!< Store the equivalence class of the initial plan
     TebOptimalPlannerPtr initial_plan_teb_;                       //!< Store pointer to the TEB related to the initial plan (use method getInitialPlanTEB() since it checks if initial_plan_teb_ is still included in tebs_.)
 
@@ -549,7 +546,7 @@ namespace hateb_local_planner
 
     boost::shared_ptr<GraphSearchInterface> graph_search_;
 
-    ros::Time last_eq_class_switching_time_; //!< Store the time at which the equivalence class changed recently
+    rclcpp::Time last_eq_class_switching_time_; //!< Store the time at which the equivalence class changed recently
 
     bool initialized_; //!< Keeps track about the correct initialization of this class
 
@@ -565,6 +562,6 @@ namespace hateb_local_planner
 } // namespace hateb_local_planner
 
 // include template implementations / definitions
-#include <hateb_local_planner/homotopy_class_planner.hpp>
+#include <homotopy_class_planner.hpp>
 
 #endif /* HOMOTOPY_CLASS_PLANNER_H_ */

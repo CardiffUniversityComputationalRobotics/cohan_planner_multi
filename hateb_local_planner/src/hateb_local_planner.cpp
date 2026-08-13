@@ -59,6 +59,8 @@
 // Local Project Headers
 #include <visualization.h>
 #include <optimal_planner.h>
+#include <homotopy_class_planner.h>
+#include <recovery_behaviors.h>
 
 #define DEFAULT_AGENT_SEGMENT cohan_msgs::msg::TrackedSegmentType::TORSO
 
@@ -230,6 +232,24 @@ private:
     // =============================
     // Planner Control and Recovery
     // =============================
+    // Recovery: oscillation detection and reduced-horizon backup.
+    hateb_local_planner::FailureDetector failure_detector_;
+    rclcpp::Time time_last_infeasible_plan_, time_last_oscillation_;
+    hateb_local_planner::RotType last_preferred_rotdir_ = hateb_local_planner::RotType::none;
+    void configureBackupModes(std::vector<geometry_msgs::msg::PoseStamped> &transformed_plan, int &goal_idx);
+
+    // pedsim assigns 0-based global agent ids (and the robot consumes one), while
+    // agents_/agents_states_/agent_nominal_vels_ are plain vectors indexed by
+    // arrival order. The two only coincide by accident. Map one to the other
+    // instead of assuming id-1 is a valid index.
+    int agentIndexFromTrackId(uint64_t track_id) const
+    {
+        for (std::size_t i = 0; i < tracked_agents_.agents.size(); ++i)
+            if (tracked_agents_.agents[i].track_id == track_id)
+                return static_cast<int>(i);
+        return -1;
+    }
+
     int no_infeasible_plans_ = 0;  //!< Store how many times in a row the planner failed to find a feasible plan.
     int control_look_ahead_poses_ = hateb_local_planner::params().control_look_ahead_poses; //! Index of the pose used to extract the velocity command
     int feasibility_check_no_poses_ = hateb_local_planner::params().feasibility_check_no_poses;
@@ -836,8 +856,27 @@ void HATEBPlanningFramework::initialize()
     hateb_local_planner::RobotFootprintModelPtr robot_model = boost::make_shared<hateb_local_planner::CircularRobotFootprint>(robot_base_radius_);
     hateb_local_planner::CircularRobotFootprintPtr agent_model = boost::make_shared<hateb_local_planner::CircularRobotFootprint>(agent_radius_);
 
-    planner_ = hateb_local_planner::PlannerInterfacePtr(new hateb_local_planner::TebOptimalPlanner(&obstacles_, robot_model, visualization_, &via_points_, agent_model, &agents_via_points_map_));
+    // Homotopy class planning explores topologically distinct routes (left of /
+    // right of / through a gap) and commits to the cheapest with hysteresis.
+    // Without it a single band sits in the saddle between two equally good ways
+    // around an obstacle and oscillates instead of committing - which is what
+    // makes narrow passages fail.
+    if (hateb_local_planner::params().enable_homotopy_class_planning)
+    {
+        planner_ = hateb_local_planner::PlannerInterfacePtr(new hateb_local_planner::HomotopyClassPlanner(&obstacles_, robot_model, visualization_, &via_points_, agent_model, &agents_via_points_map_));
+        RCLCPP_INFO(this->get_logger(), "Local planner: HomotopyClassPlanner (max %d classes)", hateb_local_planner::params().max_number_classes);
+    }
+    else
+    {
+        planner_ = hateb_local_planner::PlannerInterfacePtr(new hateb_local_planner::TebOptimalPlanner(&obstacles_, robot_model, visualization_, &via_points_, agent_model, &agents_via_points_map_));
+        RCLCPP_INFO(this->get_logger(), "Local planner: TebOptimalPlanner (single band)");
+    }
     planner_->local_weight_optimaltime_ = weight_optimaltime_;
+
+    // Oscillation filter length is a duration, so it scales with the control rate.
+    failure_detector_.setBufferLength(std::round(hateb_local_planner::params().oscillation_filter_duration / std::max(timer_period_, 1e-3)));
+    time_last_infeasible_plan_ = this->now();
+    time_last_oscillation_ = this->now();
 
     // Get footprint of the robot and minimum and maximum distance from the center of the robot to its footprint vertices.
     footprint_spec_ = costmap_ros_->getRobotFootprint();
@@ -971,6 +1010,10 @@ uint32_t HATEBPlanningFramework::computeVelocityCommands(geometry_msgs::msg::Twi
         return 1;
     }
 
+    // Reduced-horizon backup and oscillation recovery. Must run before the goal
+    // point is picked, since it may shorten the transformed plan.
+    configureBackupModes(transformed_plan, goal_idx);
+
     // Get current goal point (last point of the transformed plan)
     robot_goal_.x() = transformed_plan.back().pose.position.x;
     robot_goal_.y() = transformed_plan.back().pose.position.y;
@@ -1047,7 +1090,16 @@ uint32_t HATEBPlanningFramework::computeVelocityCommands(geometry_msgs::msg::Twi
         plan_start_vel_goal_vel.start_vel = empty_vel;
         plan_start_vel_goal_vel.nominal_vel = 0;
         plan_start_vel_goal_vel.is_mode_ = is_mode_;
-        transformed_agent_plan_vel_map[static_agents_ids[indx]] = plan_start_vel_goal_vel;
+
+        // Key by the pedsim id, the same space the prediction loop below uses.
+        // Keyed by index+1 instead, the same person lands under two different
+        // keys, so the multi-pose prediction never replaces this single-pose
+        // "static" entry - and the "static" entry is the one plan() skips.
+        int sidx = static_agents_ids[indx] - 1;
+        uint64_t key = (sidx >= 0 && sidx < (int)tracked_agents_.agents.size())
+                           ? tracked_agents_.agents[sidx].track_id
+                           : static_cast<uint64_t>(static_agents_ids[indx]);
+        transformed_agent_plan_vel_map[key] = plan_start_vel_goal_vel;
     }
 
     // TODO: predicted_agents_poses should contain the agents information
@@ -1075,7 +1127,12 @@ uint32_t HATEBPlanningFramework::computeVelocityCommands(geometry_msgs::msg::Twi
         hateb_local_planner::PlanStartVelGoalVel plan_start_vel_goal_vel;
         plan_start_vel_goal_vel.plan = agent_plan_combined.plan_to_optimize;
         plan_start_vel_goal_vel.start_vel = transformed_vel;
-        plan_start_vel_goal_vel.nominal_vel = std::max(0.3, agent_nominal_vels_[predicted_agents_poses.agent_state.id - 1]);
+        // agent_state.id is a pedsim id, not an index. Indexing agent_nominal_vels_
+        // with id-1 reads out of bounds whenever the id space is 0-based or the
+        // robot has consumed an id.
+        int nv_idx = agentIndexFromTrackId(predicted_agents_poses.agent_state.id);
+        double nominal = (nv_idx >= 0 && nv_idx < (int)agent_nominal_vels_.size()) ? agent_nominal_vels_[nv_idx] : 0.0;
+        plan_start_vel_goal_vel.nominal_vel = std::max(0.3, nominal);
         plan_start_vel_goal_vel.is_mode_ = is_mode_;
         if (!agent_plan_combined.plan_after.size() > 0)
         {
@@ -1086,6 +1143,34 @@ uint32_t HATEBPlanningFramework::computeVelocityCommands(geometry_msgs::msg::Twi
     }
     updateAgentViaPointsContainers(transformed_agent_plan_vel_map,
                                    global_plan_viapoint_sep_);
+
+    // Nothing stops the robot driving through a person who has no predicted
+    // band. AddEdgesAgentRobotSafety / TTC / RelVelocity all iterate
+    // agents_tebs_map_, and plan() skips "static" agents before a TEB is built,
+    // so the only edge that ever sees them is StaticAgentVisibility - a
+    // field-of-view cost, not a distance one. They are not in the costmap
+    // either: the local costmap runs obstacle/voxel/inflation off /scan only,
+    // with no social layer. Add them as circular obstacles so the normal
+    // min_obstacle_dist clearance applies. Agents that DO have a predicted band
+    // are left alone - the agent-robot edges already handle those, and pinning
+    // them as static obstacles would fight their own prediction.
+    for (std::size_t i = 0; i < agents_.size() && i < tracked_agents_.agents.size(); ++i)
+    {
+        auto it = transformed_agent_plan_vel_map.find(tracked_agents_.agents[i].track_id);
+        bool has_predicted_band = (it != transformed_agent_plan_vel_map.end() && it->second.plan.size() > 1);
+        if (has_predicted_band)
+            continue;
+
+        // Skip anyone well outside the local horizon (the 4 m costmap bounds the
+        // band to ~3.6 m); they cannot influence this trajectory.
+        double dx = agents_[i].position.x - robot_pose.pose.position.x;
+        double dy = agents_[i].position.y - robot_pose.pose.position.y;
+        if (std::hypot(dx, dy) > 6.0)
+            continue;
+
+        obstacles_.push_back(hateb_local_planner::ObstaclePtr(
+            new hateb_local_planner::CircularObstacle(agents_[i].position.x, agents_[i].position.y, agent_radius_)));
+    }
 
     std::string mode;
 
@@ -1130,6 +1215,7 @@ uint32_t HATEBPlanningFramework::computeVelocityCommands(geometry_msgs::msg::Twi
         planner_->clearPlanner(); // force reinitialization for next time
         RCLCPP_WARN(this->get_logger(), "hateb_local_planner was not able to obtain a local plan.");
         ++no_infeasible_plans_;
+        time_last_infeasible_plan_ = this->now();
         last_cmd_ = cmd_vel.twist; // still zeroed from the top of this function
         cmd_vel_pub_->publish(last_cmd_);
         return 1;
@@ -1170,6 +1256,7 @@ uint32_t HATEBPlanningFramework::computeVelocityCommands(geometry_msgs::msg::Twi
         planner_->clearPlanner();
         RCLCPP_WARN(this->get_logger(), "HATebLocalPlannerROS: trajectory is not feasible. Resetting planner...");
         ++no_infeasible_plans_; // increase number of infeasible solutions in a row
+        time_last_infeasible_plan_ = this->now();
         last_cmd_ = cmd_vel.twist;
         // Must return: falling through would let getVelocityCommand() below
         // overwrite these zeros and drive a trajectory we just rejected.
@@ -1183,6 +1270,7 @@ uint32_t HATEBPlanningFramework::computeVelocityCommands(geometry_msgs::msg::Twi
         planner_->clearPlanner();
         RCLCPP_WARN(this->get_logger(), "HATebLocalPlannerROS: velocity command invalid. Resetting planner...");
         ++no_infeasible_plans_; // increase number of infeasible solutions in a row
+        time_last_infeasible_plan_ = this->now();
         last_cmd_ = cmd_vel.twist; // getVelocityCommand() zeroes these on failure
         cmd_vel_pub_->publish(last_cmd_);
         return 1;
@@ -1382,6 +1470,78 @@ bool HATEBPlanningFramework::transformGlobalPlan(const std::vector<geometry_msgs
     return true;
 }
 
+void HATEBPlanningFramework::configureBackupModes(std::vector<geometry_msgs::msg::PoseStamped> &transformed_plan, int &goal_idx)
+{
+    const auto &p = hateb_local_planner::params();
+    rclcpp::Time current_time = this->now();
+
+    // Reduced horizon backup: when trajectories keep coming back infeasible,
+    // shorten the horizon so the optimizer has an easier problem to solve.
+    if (p.shrink_horizon_backup &&
+        goal_idx < (int)transformed_plan.size() - 1 && // do not reduce if the goal is already selected (orientation may change -> oscillations)
+        (no_infeasible_plans_ > 0 || (current_time - time_last_infeasible_plan_).seconds() < p.shrink_horizon_min_duration))
+    {
+        RCLCPP_INFO_EXPRESSION(this->get_logger(), no_infeasible_plans_ == 1,
+                               "Activating reduced horizon backup mode for at least %.2f sec (infeasible trajectory detected).", p.shrink_horizon_min_duration);
+
+        int horizon_reduction = goal_idx / 2;
+
+        if (no_infeasible_plans_ > 9)
+        {
+            RCLCPP_INFO_EXPRESSION(this->get_logger(), no_infeasible_plans_ == 10,
+                                   "Infeasible trajectory detected 10 times in a row: further reducing horizon...");
+            horizon_reduction /= 2;
+        }
+
+        int new_goal_idx_transformed_plan = int(transformed_plan.size()) - horizon_reduction - 1;
+        goal_idx -= horizon_reduction;
+        if (new_goal_idx_transformed_plan > 0 && goal_idx >= 0)
+            transformed_plan.erase(transformed_plan.begin() + new_goal_idx_transformed_plan, transformed_plan.end());
+        else
+            goal_idx += horizon_reduction; // this should not happen, but safety first
+    }
+
+    // Detect and resolve oscillations: if v and omega keep flipping sign in
+    // place, lock in the current turning direction so the optimizer stops
+    // flip-flopping between two equally good ways around an obstacle.
+    if (p.oscillation_recovery)
+    {
+        double max_vel_theta;
+        double max_vel_current = last_cmd_.linear.x >= 0 ? p.max_vel_x : p.max_vel_x_backwards;
+        if (p.min_turning_radius != 0 && max_vel_current > 0)
+            max_vel_theta = std::max(max_vel_current / std::abs(p.min_turning_radius), p.max_vel_theta);
+        else
+            max_vel_theta = p.max_vel_theta;
+
+        failure_detector_.update(last_cmd_, p.max_vel_x, p.max_vel_x_backwards, max_vel_theta,
+                                 p.oscillation_v_eps, p.oscillation_omega_eps);
+
+        bool oscillating = failure_detector_.isOscillating();
+        bool recently_oscillated = (this->now() - time_last_oscillation_).seconds() < p.oscillation_recovery_min_duration;
+
+        if (oscillating)
+        {
+            if (!recently_oscillated)
+            {
+                if (current_robot_velocity_.angular.z > 0)
+                    last_preferred_rotdir_ = hateb_local_planner::RotType::left;
+                else
+                    last_preferred_rotdir_ = hateb_local_planner::RotType::right;
+                RCLCPP_WARN(this->get_logger(),
+                            "Possible oscillation (of the robot or its local plan) detected. Activating recovery strategy (prefer current turning direction during optimization).");
+            }
+            time_last_oscillation_ = this->now();
+            planner_->setPreferredTurningDir(last_preferred_rotdir_);
+        }
+        else if (!recently_oscillated && last_preferred_rotdir_ != hateb_local_planner::RotType::none)
+        {
+            last_preferred_rotdir_ = hateb_local_planner::RotType::none;
+            planner_->setPreferredTurningDir(last_preferred_rotdir_);
+            RCLCPP_INFO(this->get_logger(), "Oscillation recovery disabled/expired.");
+        }
+    }
+}
+
 void HATEBPlanningFramework::saturateVelocity(double &vx, double &vy, double &omega, double max_vel_x, double max_vel_y, double max_vel_theta, double max_vel_x_backwards)
 {
     // Limit translational velocity for forward driving
@@ -1400,10 +1560,15 @@ void HATEBPlanningFramework::saturateVelocity(double &vx, double &vy, double &om
     else if (omega < -max_vel_theta)
         omega = -max_vel_theta;
 
-    // Limit backwards velocity
+    // Limit backwards velocity. max_vel_x_backwards == 0 means forward-only:
+    // hard-clamp reverse to zero. The optimizer's velocity and forward-drive
+    // terms are soft constraints and can be violated, so this clamp is what
+    // actually guarantees the robot never receives a negative linear velocity.
+    // Angular velocity is deliberately untouched - it may still rotate/steer.
     if (max_vel_x_backwards <= 0)
     {
-        RCLCPP_WARN_ONCE(this->get_logger(), "HATebLocalPlannerROS(): Do not choose max_vel_x_backwards to be <=0. Disable backwards driving by increasing the optimization weight for penalyzing backwards driving.");
+        if (vx < 0)
+            vx = 0;
     }
     else if (vx < -max_vel_x_backwards)
         vx = -max_vel_x_backwards;
@@ -1661,7 +1826,9 @@ void HATEBPlanningFramework::updateAgentViaPointsContainers(
         {
             if (initial_agent_plan[0].header.frame_id == "static")
             {
-                return;
+                // continue, not return: a static agent must not abort via-point
+                // creation for every remaining agent in the map.
+                continue;
             }
         }
 

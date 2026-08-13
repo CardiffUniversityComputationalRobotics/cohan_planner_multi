@@ -40,7 +40,7 @@
  * Modified by: Phani Teja Singamaneni
  *********************************************************************/
 
-#define THROTTLE_RATE 1.0 // seconds
+#define THROTTLE_RATE 1000 // milliseconds - RCLCPP_*_THROTTLE takes ms, not seconds
 
 #include <rclcpp/rclcpp.hpp>
 
@@ -1284,8 +1284,10 @@ namespace hateb_local_planner
 
   void TebOptimalPlanner::AddEdgesViaPointsForAgents()
   {
+    // agents_via_points_map_ is dereferenced below but was only ever guarded via
+    // via_points_, a different pointer. Both default to NULL in the constructor.
     if (weight_agent_viapoint_ == 0 || via_points_ == NULL ||
-        via_points_->empty())
+        via_points_->empty() || agents_via_points_map_ == NULL)
       return;
 
     int start_pose_idx = 0;

@@ -43,10 +43,12 @@
 #include <equivalence_relations.h>
 #include <misc.h>
 #include <obstacles.h>
-// #include <hateb_config.h>
+#include <hateb_params.h>
 #include <timed_elastic_band.h>
 
-#include <ros/ros.h>
+#include <rclcpp/rclcpp.hpp>
+#include <boost/math/special_functions/sign.hpp>
+#include <cassert>
 #include <math.h>
 #include <algorithm>
 #include <functional>
@@ -69,10 +71,10 @@ namespace hateb_local_planner
 
   public:
     /**
-     * @brief Constructor accepting a HATebConfig
-     * @param cfg HATebConfig storing some user configuration options
+     * @brief Constructor
+     * 
      */
-    HSignature(const HATebConfig &cfg) : cfg_(&cfg) {}
+    HSignature() {}
 
     /**
      * @brief Calculate the H-Signature of a path
@@ -100,7 +102,7 @@ namespace hateb_local_planner
         return;
       }
 
-      ROS_ASSERT_MSG(cfg_->hcp.h_signature_prescaler > 0.1 && cfg_->hcp.h_signature_prescaler <= 1, "Only a prescaler on the interval (0.1,1] ist allowed.");
+      assert(params().h_signature_prescaler > 0.1 && params().h_signature_prescaler <= 1 && "Only a prescaler on the interval (0.1,1] is allowed.");
 
       // guess values for f0
       // paper proposes a+b=N-1 && |a-b|<=1, 1...N obstacles
@@ -146,7 +148,7 @@ namespace hateb_local_planner
         {
           cplx obst_l = obstacles->at(l)->getCentroidCplx();
           // cplx f0 = (long double) prescaler * std::pow(obst_l-map_bottom_left,a) * std::pow(obst_l-map_top_right,b);
-          cplx f0 = (long double)cfg_->hcp.h_signature_prescaler * (long double)a * (obst_l - map_bottom_left) * (long double)b * (obst_l - map_top_right);
+          cplx f0 = (long double)params().h_signature_prescaler * (long double)a * (obst_l - map_bottom_left) * (long double)b * (obst_l - map_top_right);
 
           // denum contains product with all obstacles exepct j==l
           cplx Al = f0;
@@ -195,11 +197,11 @@ namespace hateb_local_planner
       {
         double diff_real = std::abs(hother->hsignature_.real() - hsignature_.real());
         double diff_imag = std::abs(hother->hsignature_.imag() - hsignature_.imag());
-        if (diff_real <= cfg_->hcp.h_signature_threshold && diff_imag <= cfg_->hcp.h_signature_threshold)
+        if (diff_real <= params().h_signature_threshold && diff_imag <= params().h_signature_threshold)
           return true; // Found! Homotopy class already exists, therefore nothing added
       }
       else
-        ROS_ERROR("Cannot compare HSignature equivalence classes with types other than HSignature.");
+        RCLCPP_ERROR(rclcpp::get_logger("hateb_local_planner"), "Cannot compare HSignature equivalence classes with types other than HSignature.");
 
       return false;
     }
@@ -229,7 +231,7 @@ namespace hateb_local_planner
     const std::complex<long double> &value() const { return hsignature_; }
 
   private:
-    const HATebConfig *cfg_;
+    
     std::complex<long double> hsignature_;
   };
 
@@ -245,10 +247,10 @@ namespace hateb_local_planner
   {
   public:
     /**
-     * @brief Constructor accepting a HATebConfig
-     * @param cfg HATebConfig storing some user configuration options
+     * @brief Constructor
+     * 
      */
-    HSignature3d(const HATebConfig &cfg) : cfg_(&cfg) {}
+    HSignature3d() {}
 
     /**
      * @brief Calculate the H-Signature of a path
@@ -295,11 +297,11 @@ namespace hateb_local_planner
 
           transition_time = next_transition_time;
           if (timediff_start == boost::none || timediff_end == boost::none)           // if no time information is provided yet, approximate transition time
-            next_transition_time += (nextpose - pose).norm() / cfg_->robot.max_vel_x; // Approximate the time, if no time is known
+            next_transition_time += (nextpose - pose).norm() / params().max_vel_x; // Approximate the time, if no time is known
           else                                                                        // otherwise use the time information from the teb trajectory
           {
             if (std::distance(path_iter, path_end) != std::distance(timediff_iter, timediff_end.get()))
-              ROS_ERROR("Size of poses and timediff vectors does not match. This is a bug.");
+              RCLCPP_ERROR(rclcpp::get_logger("hateb_local_planner"), "Size of poses and timediff vectors does not match. This is a bug.");
             next_transition_time += (*timediff_iter)->dt();
           }
 
@@ -357,7 +359,7 @@ namespace hateb_local_planner
           {
             // If the H-Signature for one obstacle is below this threshold, that obstacle is far away from the planned trajectory,
             // and therefore ignored in the homotopy class planning
-            if (std::abs(hother->hsignature3d_.at(i)) < cfg_->hcp.h_signature_threshold || std::abs(hsignature3d_.at(i)) < cfg_->hcp.h_signature_threshold)
+            if (std::abs(hother->hsignature3d_.at(i)) < params().h_signature_threshold || std::abs(hsignature3d_.at(i)) < params().h_signature_threshold)
               continue;
 
             if (boost::math::sign(hother->hsignature3d_.at(i)) != boost::math::sign(hsignature3d_.at(i)))
@@ -367,7 +369,7 @@ namespace hateb_local_planner
         }
       }
       else
-        ROS_ERROR("Cannot compare HSignature3d equivalence classes with types other than HSignature3d.");
+        RCLCPP_ERROR(rclcpp::get_logger("hateb_local_planner"), "Cannot compare HSignature3d equivalence classes with types other than HSignature3d.");
 
       return false;
     }
@@ -407,7 +409,7 @@ namespace hateb_local_planner
     const std::vector<double> &values() const { return hsignature3d_; }
 
   private:
-    const HATebConfig *cfg_;
+    
     std::vector<double> hsignature3d_;
   };
 

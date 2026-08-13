@@ -60,9 +60,10 @@
 
 #include <geometry_msgs/msg/twist.hpp>
 
-#include <hateb_local_planner/equivalence_relations.h>
-#include <hateb_local_planner/pose_se2.h>
-#include <hateb_local_planner/hateb_config.h>
+#include <equivalence_relations.h>
+#include <pose_se2.h>
+#include <hateb_params.h>
+#include <rclcpp/rclcpp.hpp>
 
 namespace hateb_local_planner
 {
@@ -108,7 +109,7 @@ namespace hateb_local_planner
   class GraphSearchInterface
   {
   public:
-    virtual void createGraph(const PoseSE2 &start, const PoseSE2 &goal, double dist_to_obst, double obstacle_heading_threshold, const geometry_msgs::Twist *start_velocity, double dt_ref) = 0;
+    virtual void createGraph(const PoseSE2 &start, const PoseSE2 &goal, double dist_to_obst, double obstacle_heading_threshold, const geometry_msgs::msg::Twist *start_velocity, double dt_ref) = 0;
 
     /**
      * @brief Clear any existing graph of the homotopy class search
@@ -123,7 +124,7 @@ namespace hateb_local_planner
     /**
      * @brief Protected constructor that should be called by subclasses
      */
-    GraphSearchInterface(const HATebConfig &cfg, HomotopyClassPlanner *hcp) : cfg_(&cfg), hcp_(hcp) {}
+    GraphSearchInterface(HomotopyClassPlanner *hcp) : hcp_(hcp) {}
 
     /**
      * @brief Depth First Search implementation to find all paths between the start and the specified goal vertex.
@@ -137,10 +138,9 @@ namespace hateb_local_planner
      * @param goal_orientation Orientation of the goal trajectory pose, required to initialize the trajectory/TEB
      * @param start_velocity start velocity (optional)
      */
-    void DepthFirst(HcGraph &g, std::vector<HcGraphVertexType> &visited, const HcGraphVertexType &goal, double start_orientation, double goal_orientation, const geometry_msgs::Twist *start_velocity, double dt_ref);
+    void DepthFirst(HcGraph &g, std::vector<HcGraphVertexType> &visited, const HcGraphVertexType &goal, double start_orientation, double goal_orientation, const geometry_msgs::msg::Twist *start_velocity, double dt_ref);
 
   protected:
-    const HATebConfig *cfg_;          //!< Config class that stores and manages all related parameters
     HomotopyClassPlanner *const hcp_; //!< Raw pointer to the HomotopyClassPlanner. The HomotopyClassPlanner itself is guaranteed to outlive the graph search class it is holding.
 
   public:
@@ -150,7 +150,7 @@ namespace hateb_local_planner
   class lrKeyPointGraph : public GraphSearchInterface
   {
   public:
-    lrKeyPointGraph(const HATebConfig &cfg, HomotopyClassPlanner *hcp) : GraphSearchInterface(cfg, hcp) {}
+    lrKeyPointGraph(HomotopyClassPlanner *hcp) : GraphSearchInterface(hcp) {}
 
     virtual ~lrKeyPointGraph() {}
 
@@ -169,13 +169,13 @@ namespace hateb_local_planner
      * @param obstacle_heading_threshold Value of the normalized scalar product between obstacle heading and goal heading in order to take them (obstacles) into account [0,1]
      * @param start_velocity start velocity (optional)
      */
-    virtual void createGraph(const PoseSE2 &start, const PoseSE2 &goal, double dist_to_obst, double obstacle_heading_threshold, const geometry_msgs::Twist *start_velocity, double dt_ref);
+    virtual void createGraph(const PoseSE2 &start, const PoseSE2 &goal, double dist_to_obst, double obstacle_heading_threshold, const geometry_msgs::msg::Twist *start_velocity, double dt_ref);
   };
 
   class ProbRoadmapGraph : public GraphSearchInterface
   {
   public:
-    ProbRoadmapGraph(const HATebConfig &cfg, HomotopyClassPlanner *hcp) : GraphSearchInterface(cfg, hcp) {}
+    ProbRoadmapGraph(HomotopyClassPlanner *hcp) : GraphSearchInterface(hcp) {}
 
     virtual ~ProbRoadmapGraph() {}
 
@@ -195,7 +195,7 @@ namespace hateb_local_planner
      * @param obstacle_heading_threshold Value of the normalized scalar product between obstacle heading and goal heading in order to take them (obstacles) into account [0,1]
      * @param start_velocity start velocity (optional)
      */
-    virtual void createGraph(const PoseSE2 &start, const PoseSE2 &goal, double dist_to_obst, double obstacle_heading_threshold, const geometry_msgs::Twist *start_velocity, double dt_ref);
+    virtual void createGraph(const PoseSE2 &start, const PoseSE2 &goal, double dist_to_obst, double obstacle_heading_threshold, const geometry_msgs::msg::Twist *start_velocity, double dt_ref);
 
   private:
     boost::random::mt19937 rnd_generator_; //!< Random number generator used by createProbRoadmapGraph to sample graph keypoints.

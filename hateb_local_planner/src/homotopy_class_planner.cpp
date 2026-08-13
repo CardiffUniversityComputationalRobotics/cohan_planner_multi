@@ -36,6 +36,8 @@
  * Author: Christoph Rösmann
  *********************************************************************/
 
+#include <boost/bind/bind.hpp>
+#include <boost/thread/thread.hpp>
 #include <homotopy_class_planner.h>
 
 #include <limits>
@@ -43,37 +45,35 @@
 namespace hateb_local_planner
 {
 
-  HomotopyClassPlanner::HomotopyClassPlanner() : cfg_(NULL), obstacles_(NULL), via_points_(NULL), robot_model_(new PointRobotFootprint()), initial_plan_(NULL), initialized_(false)
+  HomotopyClassPlanner::HomotopyClassPlanner() : obstacles_(NULL), via_points_(NULL), robot_model_(new PointRobotFootprint()), initial_plan_(NULL), initialized_(false)
   {
   }
 
-  HomotopyClassPlanner::HomotopyClassPlanner(const HATebConfig &cfg, ObstContainer *obstacles, RobotFootprintModelPtr robot_model,
+  HomotopyClassPlanner::HomotopyClassPlanner(ObstContainer *obstacles, RobotFootprintModelPtr robot_model,
                                              TebVisualizationPtr visual, const ViaPointContainer *via_points, CircularRobotFootprintPtr agent_model, const std::map<uint64_t, ViaPointContainer> *agents_via_points_map) : initial_plan_(NULL)
   {
-    initialize(cfg, obstacles, robot_model, visual, via_points, agent_model, agents_via_points_map);
+    initialize(obstacles, robot_model, visual, via_points, agent_model, agents_via_points_map);
   }
 
   HomotopyClassPlanner::~HomotopyClassPlanner()
   {
   }
 
-  void HomotopyClassPlanner::initialize(const HATebConfig &cfg, ObstContainer *obstacles, RobotFootprintModelPtr robot_model,
+  void HomotopyClassPlanner::initialize(ObstContainer *obstacles, RobotFootprintModelPtr robot_model,
                                         TebVisualizationPtr visual, const ViaPointContainer *via_points, CircularRobotFootprintPtr agent_model, const std::map<uint64_t, ViaPointContainer> *agents_via_points_map)
   {
-    cfg_ = &cfg;
     obstacles_ = obstacles;
     via_points_ = via_points;
     robot_model_ = robot_model;
     agent_model_ = agent_model;
     agents_via_points_map_ = agents_via_points_map;
 
-    if (cfg_->hcp.simple_exploration)
-      graph_search_ = boost::shared_ptr<GraphSearchInterface>(new lrKeyPointGraph(*cfg_, this));
+    if (params().simple_exploration)
+      graph_search_ = boost::shared_ptr<GraphSearchInterface>(new lrKeyPointGraph(this));
     else
-      graph_search_ = boost::shared_ptr<GraphSearchInterface>(new ProbRoadmapGraph(*cfg_, this));
+      graph_search_ = boost::shared_ptr<GraphSearchInterface>(new ProbRoadmapGraph(this));
 
     initialized_ = true;
-    std::cout << "I am in HCP" << '\n';
 
     setVisualization(visual);
   }
@@ -83,75 +83,88 @@ namespace hateb_local_planner
     visualization_ = visualization;
   }
 
-  bool HomotopyClassPlanner::plan(const std::vector<geometry_msgs::PoseStamped> &initial_plan,
-                                  const geometry_msgs::Twist *start_vel,
+  bool HomotopyClassPlanner::plan(const std::vector<geometry_msgs::msg::PoseStamped> &initial_plan,
+                                  const geometry_msgs::msg::Twist *start_vel,
                                   bool free_goal_vel,
                                   const AgentPlanVelMap *initial_agent_plan_vels,
-                                  hateb_local_planner::OptimizationCostArray *op_costs, double dt_ref, double dt_hyst, int Mode)
+                                  cohan_msgs::msg::OptimizationCostArray *op_costs, double dt_ref, double dt_hyst, int Mode)
   {
-    ROS_ASSERT_MSG(initialized_, "Call initialize() first.");
-    auto start_time = ros::Time::now();
+    assert(initialized_);
+    auto start_time = rclcpp::Clock().now();
 
     // store initial plan for further initializations (must be valid for the lifetime of this object or clearPlanner() is called!)
     initial_plan_ = &initial_plan;
 
     PoseSE2 start(initial_plan.front().pose);
     PoseSE2 goal(initial_plan.back().pose);
-    auto pre_plan_time = ros::Time::now() - start_time;
-    return plan(start, goal, start_vel, free_goal_vel, pre_plan_time.toSec(), op_costs, dt_ref, dt_hyst);
+    auto pre_plan_time = rclcpp::Clock().now() - start_time;
+    return plan(start, goal, start_vel, free_goal_vel, pre_plan_time.seconds(), op_costs, dt_ref, dt_hyst);
   }
 
-  bool HomotopyClassPlanner::plan(const tf::Pose &start, const tf::Pose &goal, const geometry_msgs::Twist *start_vel, bool free_goal_vel, hateb_local_planner::OptimizationCostArray *op_costs, double dt_ref, double dt_hyst, int Mode)
+  bool HomotopyClassPlanner::plan(const geometry_msgs::msg::Pose &start, const geometry_msgs::msg::Pose &goal, const geometry_msgs::msg::Twist *start_vel, bool free_goal_vel, cohan_msgs::msg::OptimizationCostArray *op_costs, double dt_ref, double dt_hyst, int Mode)
   {
-    ROS_ASSERT_MSG(initialized_, "Call initialize() first.");
+    assert(initialized_);
     PoseSE2 start_pose(start);
     PoseSE2 goal_pose(goal);
     double pre_plan_time = 0.0;
     return plan(start_pose, goal_pose, start_vel, free_goal_vel, pre_plan_time, op_costs, dt_ref, dt_hyst);
   }
 
-  bool HomotopyClassPlanner::plan(const PoseSE2 &start, const PoseSE2 &goal, const geometry_msgs::Twist *start_vel, bool free_goal_vel, double pre_plan_time, hateb_local_planner::OptimizationCostArray *op_costs, double dt_ref, double dt_hyst, int Mode)
+  bool HomotopyClassPlanner::plan(const PoseSE2 &start, const PoseSE2 &goal, const geometry_msgs::msg::Twist *start_vel, bool free_goal_vel, double pre_plan_time, cohan_msgs::msg::OptimizationCostArray *op_costs, double dt_ref, double dt_hyst, int Mode)
   {
-    ROS_ASSERT_MSG(initialized_, "Call initialize() first.");
-    auto start_time = ros::Time::now();
+    assert(initialized_);
+    auto start_time = rclcpp::Clock().now();
 
     // Update old TEBs with new start, goal and velocity
-    auto teb_update_start_time = ros::Time::now();
+    auto teb_update_start_time = rclcpp::Clock().now();
     updateAllTEBs(&start, &goal, start_vel);
-    auto teb_update_time = ros::Time::now() - teb_update_start_time;
+    auto teb_update_time = rclcpp::Clock().now() - teb_update_start_time;
 
     // Init new TEBs based on newly explored homotopy classes
-    auto hex_start_time = ros::Time::now();
-    exploreEquivalenceClassesAndInitTebs(start, goal, cfg_->obstacles.min_obstacle_dist, start_vel, dt_ref);
-    auto hex_time = ros::Time::now() - hex_start_time;
+    auto hex_start_time = rclcpp::Clock().now();
+    exploreEquivalenceClassesAndInitTebs(start, goal, params().min_obstacle_dist, start_vel, dt_ref);
+    auto hex_time = rclcpp::Clock().now() - hex_start_time;
 
     // update via-points if activated
-    auto via_start_time = ros::Time::now();
-    updateReferenceTrajectoryViaPoints(cfg_->hcp.viapoints_all_candidates);
-    auto via_time = ros::Time::now() - via_start_time;
+    auto via_start_time = rclcpp::Clock().now();
+    updateReferenceTrajectoryViaPoints(params().viapoints_all_candidates);
+    auto via_time = rclcpp::Clock().now() - via_start_time;
 
     // Optimize all trajectories in alternative homotopy classes
-    auto teb_start_time = ros::Time::now();
-    optimizeAllTEBs(cfg_->optim.no_inner_iterations, cfg_->optim.no_outer_iterations, dt_ref, dt_hyst);
-    auto teb_time = ros::Time::now() - teb_start_time;
+    auto teb_start_time = rclcpp::Clock().now();
+    optimizeAllTEBs(params().no_inner_iterations, params().no_outer_iterations, dt_ref, dt_hyst);
+    auto teb_time = rclcpp::Clock().now() - teb_start_time;
 
-    auto other_start_time = ros::Time::now();
+    auto other_start_time = rclcpp::Clock().now();
 
     // Select which candidate (based on alternative homotopy classes) should be used
     selectBestTeb();
 
-    initial_plan_ = nullptr; // clear pointer to any previous initial plan (any previous plan is useless regarding the h-signature);
-    auto other_time = ros::Time::now() - other_start_time;
+    // Report the per-constraint costs of the band we actually committed to.
+    // optimizeAllTEBs() cannot do this: it optimizes every candidate, in
+    // parallel by default, so filling one shared array there would both race
+    // and mix the costs of bands that were never driven.
+    if (op_costs)
+    {
+      op_costs->costs.clear();
+      TebOptimalPlannerPtr best = bestTeb();
+      if (best)
+        best->computeCurrentCost(params().selection_obst_cost_scale, params().selection_viapoint_cost_scale,
+                                 params().selection_alternative_time_cost, op_costs);
+    }
 
-    auto total_time = ros::Time::now() - start_time;
-    ROS_INFO_STREAM_COND((total_time.toSec() + pre_plan_time) > 0.05, "\nhomotopy class plan times:\n"
-                                                                          << "\ttotal plan time            " << std::to_string(total_time.toSec() + pre_plan_time) << "\n"
+    initial_plan_ = nullptr; // clear pointer to any previous initial plan (any previous plan is useless regarding the h-signature);
+    auto other_time = rclcpp::Clock().now() - other_start_time;
+
+    auto total_time = rclcpp::Clock().now() - start_time;
+    RCLCPP_INFO_STREAM_EXPRESSION(rclcpp::get_logger("hateb_local_planner"), (total_time.seconds() + pre_plan_time) > 0.05, "\nhomotopy class plan times:\n"
+                                                                          << "\ttotal plan time            " << std::to_string(total_time.seconds() + pre_plan_time) << "\n"
                                                                           << "\tpre-plan time              " << std::to_string(pre_plan_time) << "\n"
-                                                                          << "\tteb update time            " << std::to_string(teb_update_time.toSec()) << "\n"
-                                                                          << "\thomotopy exploration time  " << std::to_string(hex_time.toSec()) << "\n"
-                                                                          << "\tvia points time            " << std::to_string(via_time.toSec()) << "\n"
-                                                                          << "\tteb optimize time          " << std::to_string(teb_time.toSec()) << "\n"
-                                                                          << "\tother time                 " << std::to_string(other_time.toSec()) << "\n-------------------------");
+                                                                          << "\tteb update time            " << std::to_string(teb_update_time.seconds()) << "\n"
+                                                                          << "\thomotopy exploration time  " << std::to_string(hex_time.seconds()) << "\n"
+                                                                          << "\tvia points time            " << std::to_string(via_time.seconds()) << "\n"
+                                                                          << "\tteb optimize time          " << std::to_string(teb_time.seconds()) << "\n"
+                                                                          << "\tother time                 " << std::to_string(other_time.seconds()) << "\n-------------------------");
     return true;
   }
 
@@ -174,7 +187,7 @@ namespace hateb_local_planner
     if (visualization_)
     {
       // Visualize graph
-      if (cfg_->hcp.visualize_hc_graph && graph_search_)
+      if (params().visualize_hc_graph && graph_search_)
         visualization_->publishGraph(graph_search_->graph_);
 
       // Visualize active tebs as marker
@@ -190,7 +203,7 @@ namespace hateb_local_planner
           visualization_->publishRobotFootprintModel(best_teb->teb().Pose(0), *robot_model_);
 
         // feedback message
-        if (cfg_->trajectory.publish_feedback)
+        if (params().publish_feedback)
         {
           int best_idx = bestTebIdx();
           if (best_idx >= 0)
@@ -199,7 +212,7 @@ namespace hateb_local_planner
       }
     }
     else
-      ROS_DEBUG("Ignoring HomotopyClassPlanner::visualize() call, since no visualization class was instantiated before.");
+      RCLCPP_DEBUG(rclcpp::get_logger("hateb_local_planner"), "Ignoring HomotopyClassPlanner::visualize() call, since no visualization class was instantiated before.");
   }
 
   bool HomotopyClassPlanner::hasEquivalenceClass(const EquivalenceClassPtr &eq_class) const
@@ -220,7 +233,7 @@ namespace hateb_local_planner
 
     if (!eq_class->isValid())
     {
-      ROS_WARN("HomotopyClassPlanner: Ignoring invalid H-signature");
+      RCLCPP_WARN(rclcpp::get_logger("hateb_local_planner"), "HomotopyClassPlanner: Ignoring invalid H-signature");
       return false;
     }
 
@@ -273,7 +286,7 @@ namespace hateb_local_planner
       ++it_teb;
     }
     if (delete_detours)
-      deletePlansDetouringBackwards(cfg_->hcp.detours_orientation_tolerance, cfg_->hcp.length_start_orientation_vector);
+      deletePlansDetouringBackwards(params().detours_orientation_tolerance, params().length_start_orientation_vector);
 
     // Find multiple candidates and delete the one with higher cost
     // TODO: this code needs to be adpated. Erasing tebs from the teb container_ could make iteratores stored in the candidate list invalid!
@@ -282,7 +295,7 @@ namespace hateb_local_planner
     //   while (cand_i != teb_candidates.rend())
     //   {
     //
-    //     TebCandidateType::reverse_iterator cand_j = std::find_if(boost::next(cand_i),teb_candidates.rend(), boost::bind(compareH,_1,cand_i->second));
+    //     TebCandidateType::reverse_iterator cand_j = std::find_if(boost::next(cand_i),teb_candidates.rend(), boost::bind(compareH, boost::placeholders::_1,cand_i->second));
     //     if (cand_j != teb_candidates.rend() && cand_j != cand_i)
     //     {
     //         TebOptimalPlannerPtr pt1 = *(cand_j->first);
@@ -303,7 +316,7 @@ namespace hateb_local_planner
     //     }
     //     else
     //     {
-    //         ROS_WARN_STREAM("increase cand_i");
+    //         RCLCPP_WARN_STREAM(rclcpp::get_logger("hateb_local_planner"), "increase cand_i");
     //         ++cand_i;
     //     }
     //   }
@@ -311,10 +324,10 @@ namespace hateb_local_planner
     // now add the h-signatures to the internal lookup-table (but only if there is no existing duplicate)
     //   for (TebCandidateType::iterator cand=teb_candidates.begin(); cand!=teb_candidates.end(); ++cand)
     //   {
-    //     bool new_flag = addNewHSignatureIfNew(cand->second, cfg_->hcp.h_signature_threshold);
+    //     bool new_flag = addNewHSignatureIfNew(cand->second, params().h_signature_threshold);
     //     if (!new_flag)
     //     {
-    // //       ROS_ERROR_STREAM("getAndFilterHomotopyClassesTEB() - This schould not be happen.");
+    // //       RCLCPP_ERROR_STREAM(rclcpp::get_logger("hateb_local_planner"), "getAndFilterHomotopyClassesTEB() - This schould not be happen.");
     //       tebs_.erase(cand->first);
     //     }
     //   }
@@ -322,12 +335,12 @@ namespace hateb_local_planner
 
   void HomotopyClassPlanner::updateReferenceTrajectoryViaPoints(bool all_trajectories)
   {
-    if ((!all_trajectories && !initial_plan_) || !via_points_ || via_points_->empty() || cfg_->optim.weight_viapoint <= 0)
+    if ((!all_trajectories && !initial_plan_) || !via_points_ || via_points_->empty() || params().weight_viapoint <= 0)
       return;
 
     if (equivalence_classes_.size() < tebs_.size())
     {
-      ROS_ERROR("HomotopyClassPlanner::updateReferenceTrajectoryWithViaPoints(): Number of h-signatures does not match number of trajectories.");
+      RCLCPP_ERROR(rclcpp::get_logger("hateb_local_planner"), "HomotopyClassPlanner::updateReferenceTrajectoryWithViaPoints(): Number of h-signatures does not match number of trajectories.");
       return;
     }
 
@@ -352,10 +365,10 @@ namespace hateb_local_planner
     }
   }
 
-  void HomotopyClassPlanner::exploreEquivalenceClassesAndInitTebs(const PoseSE2 &start, const PoseSE2 &goal, double dist_to_obst, const geometry_msgs::Twist *start_vel, double dt_ref)
+  void HomotopyClassPlanner::exploreEquivalenceClassesAndInitTebs(const PoseSE2 &start, const PoseSE2 &goal, double dist_to_obst, const geometry_msgs::msg::Twist *start_vel, double dt_ref)
   {
     // first process old trajectories
-    renewAndAnalyzeOldTebs(cfg_->hcp.delete_detours_backwards);
+    renewAndAnalyzeOldTebs(params().delete_detours_backwards);
 
     // inject initial plan if available and not yet captured
     if (initial_plan_)
@@ -369,17 +382,17 @@ namespace hateb_local_planner
     }
 
     // now explore new homotopy classes and initialize tebs if new ones are found. The appropriate createGraph method is chosen via polymorphism.
-    graph_search_->createGraph(start, goal, dist_to_obst, cfg_->hcp.obstacle_heading_threshold, start_vel, dt_ref);
+    graph_search_->createGraph(start, goal, dist_to_obst, params().obstacle_heading_threshold, start_vel, dt_ref);
   }
 
-  TebOptimalPlannerPtr HomotopyClassPlanner::addAndInitNewTeb(const PoseSE2 &start, const PoseSE2 &goal, const geometry_msgs::Twist *start_velocity, double dt_ref)
+  TebOptimalPlannerPtr HomotopyClassPlanner::addAndInitNewTeb(const PoseSE2 &start, const PoseSE2 &goal, const geometry_msgs::msg::Twist *start_velocity, double dt_ref)
   {
-    if (tebs_.size() >= cfg_->hcp.max_number_classes)
+    if (tebs_.size() >= params().max_number_classes)
       return TebOptimalPlannerPtr();
-    TebOptimalPlannerPtr candidate = TebOptimalPlannerPtr(new TebOptimalPlanner(*cfg_, obstacles_, robot_model_, visualization_, via_points_, agent_model_, agents_via_points_map_));
+    TebOptimalPlannerPtr candidate = TebOptimalPlannerPtr(new TebOptimalPlanner(obstacles_, robot_model_, visualization_, via_points_, agent_model_, agents_via_points_map_));
     // cfg_, &obstacles_, robot_model, visualization_, &via_points_, agent_model, &agents_via_points_map_))
-    // candidate->teb().initTrajectoryToGoal(start, goal, 0, cfg_->robot.max_vel_x, cfg_->trajectory.min_samples, cfg_->trajectory.allow_init_with_backwards_motion);
-    candidate->teb().initTEBtoGoal(start, goal, 0, dt_ref, cfg_->trajectory.min_samples);
+    // candidate->teb().initTrajectoryToGoal(start, goal, 0, params().max_vel_x, params().min_samples, params().allow_init_with_backwards_motion);
+    candidate->teb().initTEBtoGoal(start, goal, 0, dt_ref, params().min_samples);
     if (start_velocity)
       candidate->setVelocityStart(*start_velocity);
 
@@ -396,15 +409,15 @@ namespace hateb_local_planner
     return TebOptimalPlannerPtr();
   }
 
-  TebOptimalPlannerPtr HomotopyClassPlanner::addAndInitNewTeb(const std::vector<geometry_msgs::PoseStamped> &initial_plan, const geometry_msgs::Twist *start_velocity, double dt_ref)
+  TebOptimalPlannerPtr HomotopyClassPlanner::addAndInitNewTeb(const std::vector<geometry_msgs::msg::PoseStamped> &initial_plan, const geometry_msgs::msg::Twist *start_velocity, double dt_ref)
   {
-    if (tebs_.size() >= cfg_->hcp.max_number_classes)
+    if (tebs_.size() >= params().max_number_classes)
       return TebOptimalPlannerPtr();
-    TebOptimalPlannerPtr candidate = TebOptimalPlannerPtr(new TebOptimalPlanner(*cfg_, obstacles_, robot_model_, visualization_, via_points_, agent_model_, agents_via_points_map_));
+    TebOptimalPlannerPtr candidate = TebOptimalPlannerPtr(new TebOptimalPlanner(obstacles_, robot_model_, visualization_, via_points_, agent_model_, agents_via_points_map_));
 
-    // candidate->teb().initTrajectoryToGoal(initial_plan, cfg_->robot.max_vel_x,
-    // cfg_->trajectory.global_plan_overwrite_orientation, cfg_->trajectory.min_samples, cfg_->trajectory.allow_init_with_backwards_motion);
-    candidate->teb().initTEBtoGoal(*initial_plan_, dt_ref, true, cfg_->trajectory.min_samples);
+    // candidate->teb().initTrajectoryToGoal(initial_plan, params().max_vel_x,
+    // params().global_plan_overwrite_orientation, params().min_samples, params().allow_init_with_backwards_motion);
+    candidate->teb().initTEBtoGoal(*initial_plan_, dt_ref, true, params().min_samples);
     if (start_velocity)
       candidate->setVelocityStart(*start_velocity);
 
@@ -422,13 +435,13 @@ namespace hateb_local_planner
     return TebOptimalPlannerPtr();
   }
 
-  void HomotopyClassPlanner::updateAllTEBs(const PoseSE2 *start, const PoseSE2 *goal, const geometry_msgs::Twist *start_velocity)
+  void HomotopyClassPlanner::updateAllTEBs(const PoseSE2 *start, const PoseSE2 *goal, const geometry_msgs::msg::Twist *start_velocity)
   {
     // If new goal is too far away, clear all existing trajectories to let them reinitialize later.
     // Since all Tebs are sharing the same fixed goal pose, just take the first candidate:
-    if (!tebs_.empty() && ((goal->position() - tebs_.front()->teb().BackPose().position()).norm() >= cfg_->trajectory.force_reinit_new_goal_dist || fabs(g2o::normalize_theta(goal->theta() - tebs_.front()->teb().BackPose().theta())) >= cfg_->trajectory.force_reinit_new_goal_angular))
+    if (!tebs_.empty() && ((goal->position() - tebs_.front()->teb().BackPose().position()).norm() >= params().force_reinit_new_goal_dist || fabs(g2o::normalize_theta(goal->theta() - tebs_.front()->teb().BackPose().theta())) >= params().force_reinit_new_goal_angular))
     {
-      ROS_DEBUG("New goal: distance to existing goal is higher than the specified threshold. Reinitalizing trajectories.");
+      RCLCPP_DEBUG(rclcpp::get_logger("hateb_local_planner"), "New goal: distance to existing goal is higher than the specified threshold. Reinitalizing trajectories.");
       tebs_.clear();
       equivalence_classes_.clear();
     }
@@ -444,10 +457,13 @@ namespace hateb_local_planner
 
   void HomotopyClassPlanner::optimizeAllTEBs(int iter_innerloop, int iter_outerloop, double dt_ref, double dt_hyst)
   {
-    hateb_local_planner::OptimizationCostArray *op_costs = NULL;
+    // Deliberately NULL: costs are reported once for the selected band in
+    // plan(), after selectBestTeb(). Threading a shared array through the
+    // parallel loop below would be a data race.
+    cohan_msgs::msg::OptimizationCostArray *op_costs = NULL;
 
     // optimize TEBs in parallel since they are independend of each other
-    if (cfg_->hcp.enable_multithreading)
+    if (params().enable_multithreading)
     {
       // Must prevent .join_all() from throwing exception if interruption was
       // requested, as this can lead to multiple threads operating on the same
@@ -457,7 +473,7 @@ namespace hateb_local_planner
       boost::thread_group teb_threads;
       for (TebOptPlannerContainer::iterator it_teb = tebs_.begin(); it_teb != tebs_.end(); ++it_teb)
       {
-        teb_threads.create_thread(boost::bind(&TebOptimalPlanner::optimizeTEB, it_teb->get(), iter_innerloop, iter_outerloop, true, cfg_->hcp.selection_obst_cost_scale, cfg_->hcp.selection_viapoint_cost_scale, cfg_->hcp.selection_alternative_time_cost, op_costs));
+        teb_threads.create_thread(boost::bind(&TebOptimalPlanner::optimizeTEB, it_teb->get(), iter_innerloop, iter_outerloop, true, params().selection_obst_cost_scale, params().selection_viapoint_cost_scale, params().selection_alternative_time_cost, op_costs));
       }
       teb_threads.join_all();
     }
@@ -465,8 +481,8 @@ namespace hateb_local_planner
     {
       for (TebOptPlannerContainer::iterator it_teb = tebs_.begin(); it_teb != tebs_.end(); ++it_teb)
       {
-        it_teb->get()->optimizeTEB(iter_innerloop, iter_outerloop, true, cfg_->hcp.selection_obst_cost_scale,
-                                   cfg_->hcp.selection_viapoint_cost_scale, cfg_->hcp.selection_alternative_time_cost, op_costs, dt_ref, dt_hyst); // compute cost as well inside optimizeTEB (last argument = true)
+        it_teb->get()->optimizeTEB(iter_innerloop, iter_outerloop, true, params().selection_obst_cost_scale,
+                                   params().selection_viapoint_cost_scale, params().selection_alternative_time_cost, op_costs, dt_ref, dt_hyst); // compute cost as well inside optimizeTEB (last argument = true)
       }
     }
   }
@@ -482,7 +498,7 @@ namespace hateb_local_planner
       else
       {
         initial_plan_teb_.reset(); // reset pointer for next call
-        ROS_DEBUG("initial teb not found, trying to find a match according to the cached equivalence class");
+        RCLCPP_DEBUG(rclcpp::get_logger("hateb_local_planner"), "initial teb not found, trying to find a match according to the cached equivalence class");
       }
     }
 
@@ -507,10 +523,10 @@ namespace hateb_local_planner
         }
       }
       else
-        ROS_ERROR("HomotopyClassPlanner::getInitialPlanTEB(): number of equivalence classes (%lu) and number of trajectories (%lu) does not match.", equivalence_classes_.size(), tebs_.size());
+        RCLCPP_ERROR(rclcpp::get_logger("hateb_local_planner"), "HomotopyClassPlanner::getInitialPlanTEB(): number of equivalence classes (%lu) and number of trajectories (%lu) does not match.", equivalence_classes_.size(), tebs_.size());
     }
     else
-      ROS_DEBUG("HomotopyClassPlanner::getInitialPlanTEB(): initial TEB not found in the set of available trajectories.");
+      RCLCPP_DEBUG(rclcpp::get_logger("hateb_local_planner"), "HomotopyClassPlanner::getInitialPlanTEB(): initial TEB not found in the set of available trajectories.");
 
     return TebOptimalPlannerPtr();
   }
@@ -527,7 +543,7 @@ namespace hateb_local_planner
     if (best_teb_ && std::find(tebs_.begin(), tebs_.end(), best_teb_) != tebs_.end())
     {
       // get cost of this candidate
-      min_cost_last_best = best_teb_->getCurrentCost() * cfg_->hcp.selection_cost_hysteresis; // small hysteresis
+      min_cost_last_best = best_teb_->getCurrentCost() * params().selection_cost_hysteresis; // small hysteresis
       last_best_teb_ = best_teb_;
     }
     else
@@ -538,7 +554,7 @@ namespace hateb_local_planner
     if (initial_plan_teb) // the validity was already checked in getInitialPlanTEB()
     {
       // get cost of this candidate
-      min_cost_initial_plan_teb = initial_plan_teb->getCurrentCost() * cfg_->hcp.selection_prefer_initial_plan; // small hysteresis
+      min_cost_initial_plan_teb = initial_plan_teb->getCurrentCost() * params().selection_prefer_initial_plan; // small hysteresis
     }
 
     best_teb_.reset(); // reset pointer
@@ -548,7 +564,7 @@ namespace hateb_local_planner
       // check if the related TEB leaves the local costmap region
       //      if (tebs_.size()>1 && !(*it_teb)->teb().isTrajectoryInsideRegion(20, -1, 1))
       //      {
-      //          ROS_INFO("HomotopyClassPlanner::selectBestTeb(): skipping trajectories that are not inside the local costmap");
+      //          RCLCPP_INFO(rclcpp::get_logger("hateb_local_planner"), "HomotopyClassPlanner::selectBestTeb(): skipping trajectories that are not inside the local costmap");
       //          continue;
       //      }
 
@@ -572,7 +588,7 @@ namespace hateb_local_planner
     // in case we haven't found any teb due to some previous checks, investigate list again
     //   if (!best_teb_ && !tebs_.empty())
     //   {
-    //       ROS_DEBUG("all " << tebs_.size() << " tebs rejected previously");
+    //       RCLCPP_DEBUG(rclcpp::get_logger("hateb_local_planner"), "all " << tebs_.size() << " tebs rejected previously");
     //       if (tebs_.size()==1)
     //         best_teb_ = tebs_.front();
     //       else // if multiple TEBs are available:
@@ -601,14 +617,14 @@ namespace hateb_local_planner
     // check if we are allowed to change
     if (last_best_teb_ && best_teb_ != last_best_teb_)
     {
-      ros::Time now = ros::Time::now();
-      if ((now - last_eq_class_switching_time_).toSec() > cfg_->hcp.switching_blocking_period)
+      rclcpp::Time now = rclcpp::Clock().now();
+      if ((now - last_eq_class_switching_time_).seconds() > params().switching_blocking_period)
       {
         last_eq_class_switching_time_ = now;
       }
       else
       {
-        ROS_DEBUG("HomotopyClassPlanner::selectBestTeb(): Switching equivalence classes blocked (check parameter switching_blocking_period.");
+        RCLCPP_DEBUG(rclcpp::get_logger("hateb_local_planner"), "HomotopyClassPlanner::selectBestTeb(): Switching equivalence classes blocked (check parameter switching_blocking_period.");
         // block switching, so revert best_teb_
         best_teb_ = last_best_teb_;
       }
@@ -634,19 +650,19 @@ namespace hateb_local_planner
     return -1;
   }
 
-  bool HomotopyClassPlanner::isTrajectoryFeasible(base_local_planner::CostmapModel *costmap_model, const std::vector<geometry_msgs::Point> &footprint_spec,
+  bool HomotopyClassPlanner::isTrajectoryFeasible(nav2_costmap_2d::Costmap2D *costmap, const std::vector<geometry_msgs::msg::Point> &footprint_spec,
                                                   double inscribed_radius, double circumscribed_radius, int look_ahead_idx)
   {
     bool feasible = false;
-    while (ros::ok() && !feasible && tebs_.size() > 0)
+    while (rclcpp::ok() && !feasible && tebs_.size() > 0)
     {
       TebOptimalPlannerPtr best = findBestTeb();
       if (!best)
       {
-        ROS_ERROR("Couldn't retrieve the best plan");
+        RCLCPP_ERROR(rclcpp::get_logger("hateb_local_planner"), "Couldn't retrieve the best plan");
         return false;
       }
-      feasible = best->isTrajectoryFeasible(costmap_model, footprint_spec, inscribed_radius, circumscribed_radius, look_ahead_idx);
+      feasible = best->isTrajectoryFeasible(costmap, footprint_spec, inscribed_radius, circumscribed_radius, look_ahead_idx);
       if (!feasible)
       {
         removeTeb(best);
@@ -671,7 +687,7 @@ namespace hateb_local_planner
     TebOptPlannerContainer::iterator return_iterator = tebs_.end();
     if (equivalence_classes_.size() != tebs_.size())
     {
-      ROS_ERROR("removeTeb: size of eq classes != size of tebs");
+      RCLCPP_ERROR(rclcpp::get_logger("hateb_local_planner"), "removeTeb: size of eq classes != size of tebs");
       return return_iterator;
     }
     auto it_eq_classes = equivalence_classes_.begin();
@@ -726,14 +742,14 @@ namespace hateb_local_planner
       }
       if ((*it_teb)->teb().sizePoses() < 2)
       {
-        ROS_DEBUG("Discarding a plan with less than 2 poses");
+        RCLCPP_DEBUG(rclcpp::get_logger("hateb_local_planner"), "Discarding a plan with less than 2 poses");
         it_teb = removeTeb(*it_teb);
         continue;
       }
       double plan_orientation;
       if (!computeStartOrientation(*it_teb, len_orientation_vector, plan_orientation))
       {
-        ROS_DEBUG("Failed to compute the start orientation for one of the tebs, likely close to the target");
+        RCLCPP_DEBUG(rclcpp::get_logger("hateb_local_planner"), "Failed to compute the start orientation for one of the tebs, likely close to the target");
         it_teb = removeTeb(*it_teb);
         continue;
       }
@@ -744,13 +760,13 @@ namespace hateb_local_planner
       }
       if (!it_teb->get()->isOptimized())
       {
-        ROS_DEBUG("Removing a teb because it's not optimized");
+        RCLCPP_DEBUG(rclcpp::get_logger("hateb_local_planner"), "Removing a teb because it's not optimized");
         it_teb = removeTeb(*it_teb); // Deletes tebs that cannot be optimized (last optim call failed)
         continue;
       }
-      if (it_teb->get()->teb().getSumOfAllTimeDiffs() / best_plan_duration > cfg_->hcp.max_ratio_detours_duration_best_duration)
+      if (it_teb->get()->teb().getSumOfAllTimeDiffs() / best_plan_duration > params().max_ratio_detours_duration_best_duration)
       {
-        ROS_DEBUG("Removing a teb because it's duration is much longer than that of the best teb");
+        RCLCPP_DEBUG(rclcpp::get_logger("hateb_local_planner"), "Removing a teb because it's duration is much longer than that of the best teb");
         it_teb = removeTeb(*it_teb);
         continue;
       }
@@ -779,14 +795,28 @@ namespace hateb_local_planner
     return true;
   }
 
-  void HomotopyClassPlanner::getFullTrajectory(std::vector<TrajectoryPointMsg> &trajectory) const
+  void HomotopyClassPlanner::getFullTrajectory(std::vector<cohan_msgs::msg::TrajectoryPointMsg> &trajectory) const
   {
-    return;
+    // Delegate to the selected band. Upstream left this a stub, which silently
+    // empties the trajectory the node publishes for visualization.
+    TebOptimalPlannerConstPtr best_teb = bestTeb();
+    if (!best_teb)
+    {
+      trajectory.clear();
+      return;
+    }
+    best_teb->getFullTrajectory(trajectory);
   }
 
-  void HomotopyClassPlanner::getFullAgentTrajectory(const uint64_t agent_id, std::vector<TrajectoryPointMsg> &agent_trajectory)
+  void HomotopyClassPlanner::getFullAgentTrajectory(const uint64_t agent_id, std::vector<cohan_msgs::msg::TrajectoryPointMsg> &agent_trajectory)
   {
-    return;
+    TebOptimalPlannerPtr best_teb = bestTeb();
+    if (!best_teb)
+    {
+      agent_trajectory.clear();
+      return;
+    }
+    best_teb->getFullAgentTrajectory(agent_id, agent_trajectory);
   }
 
 } // end namespace

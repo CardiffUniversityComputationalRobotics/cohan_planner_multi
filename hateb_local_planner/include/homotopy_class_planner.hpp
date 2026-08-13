@@ -37,8 +37,8 @@
  * Minor Modifications by: Phani Teja Singamaneni
  *********************************************************************/
 
-#include <hateb_local_planner/homotopy_class_planner.h>
-#include <hateb_local_planner/h_signature.h>
+#include <homotopy_class_planner.h>
+#include <h_signature.h>
 
 namespace hateb_local_planner
 {
@@ -47,30 +47,34 @@ namespace hateb_local_planner
   EquivalenceClassPtr HomotopyClassPlanner::calculateEquivalenceClass(BidirIter path_start, BidirIter path_end, Fun fun_cplx_point, const ObstContainer *obstacles,
                                                                       boost::optional<TimeDiffSequence::iterator> timediff_start, boost::optional<TimeDiffSequence::iterator> timediff_end)
   {
-    if (cfg_->obstacles.include_dynamic_obstacles)
+    if (params().include_dynamic_obstacles)
     {
-      HSignature3d *H = new HSignature3d(*cfg_);
+      HSignature3d *H = new HSignature3d();
       H->calculateHSignature(path_start, path_end, fun_cplx_point, obstacles, timediff_start, timediff_end);
       return EquivalenceClassPtr(H);
     }
     else
     {
-      HSignature *H = new HSignature(*cfg_);
+      HSignature *H = new HSignature();
       H->calculateHSignature(path_start, path_end, fun_cplx_point, obstacles);
       return EquivalenceClassPtr(H);
     }
   }
 
   template <typename BidirIter, typename Fun>
-  TebOptimalPlannerPtr HomotopyClassPlanner::addAndInitNewTeb(BidirIter path_start, BidirIter path_end, Fun fun_position, double start_orientation, double goal_orientation, const geometry_msgs::Twist *start_velocity, double dt_ref)
+  TebOptimalPlannerPtr HomotopyClassPlanner::addAndInitNewTeb(BidirIter path_start, BidirIter path_end, Fun fun_position, double start_orientation, double goal_orientation, const geometry_msgs::msg::Twist *start_velocity, double dt_ref)
   {
-    TebOptimalPlannerPtr candidate = TebOptimalPlannerPtr(new TebOptimalPlanner(*cfg_, obstacles_, robot_model_));
+    // Pass the full context, as the other two addAndInitNewTeb overloads do.
+    // Constructing with only (obstacles, robot_model) leaves via_points_,
+    // agents_via_points_map_ and agent_model_ at their defaults, so graph-search
+    // candidates would silently ignore via-points and the agent constraints.
+    TebOptimalPlannerPtr candidate = TebOptimalPlannerPtr(new TebOptimalPlanner(obstacles_, robot_model_, visualization_, via_points_, agent_model_, agents_via_points_map_));
 
-    // candidate->teb().initTrajectoryToGoal(path_start, path_end, fun_position, cfg_->robot.max_vel_x, cfg_->robot.max_vel_theta,
-    // cfg_->robot.acc_lim_x, cfg_->robot.acc_lim_theta, start_orientation, goal_orientation, cfg_->trajectory.min_samples,
-    // cfg_->trajectory.allow_init_with_backwards_motion);
-    candidate->teb().initTEBtoGoal(path_start, path_end, fun_position, cfg_->robot.max_vel_x, cfg_->robot.max_vel_theta,
-                                   cfg_->robot.acc_lim_x, cfg_->robot.acc_lim_theta, start_orientation, goal_orientation, cfg_->trajectory.min_samples);
+    // candidate->teb().initTrajectoryToGoal(path_start, path_end, fun_position, params().max_vel_x, params().max_vel_theta,
+    // params().acc_lim_x, params().acc_lim_theta, start_orientation, goal_orientation, params().min_samples,
+    // params().allow_init_with_backwards_motion);
+    candidate->teb().initTEBtoGoal(path_start, path_end, fun_position, params().max_vel_x, params().max_vel_theta,
+                                   params().acc_lim_x, params().acc_lim_theta, start_orientation, goal_orientation, params().min_samples);
 
     if (start_velocity)
       candidate->setVelocityStart(*start_velocity);

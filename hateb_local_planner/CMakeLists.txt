@@ -97,11 +97,11 @@ add_executable(hateb_local_planner_node
   src/optimal_planner.cpp
   src/obstacles.cpp
   src/visualization.cpp
-  # src/recovery_behaviors.cpp
-  # src/hateb_config.cpp
-  # src/homotopy_class_planner.cpp
-  # src/graph_search.cpp
-  # src/backoff.cpp
+  src/recovery_behaviors.cpp
+  src/homotopy_class_planner.cpp
+  src/graph_search.cpp
+  # src/hateb_config.cpp   - replaced by include/hateb_params.h
+  # src/backoff.cpp        - backoff recovery deliberately not ported
 )
 
 ament_target_dependencies(hateb_local_planner_node ${dependencies})
