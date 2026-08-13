@@ -59,7 +59,6 @@
 // Local Project Headers
 #include <visualization.h>
 #include <optimal_planner.h>
-#include <homotopy_class_planner.h>
 #include <recovery_behaviors.h>
 
 #define DEFAULT_AGENT_SEGMENT cohan_msgs::msg::TrackedSegmentType::TORSO
@@ -856,21 +855,11 @@ void HATEBPlanningFramework::initialize()
     hateb_local_planner::RobotFootprintModelPtr robot_model = boost::make_shared<hateb_local_planner::CircularRobotFootprint>(robot_base_radius_);
     hateb_local_planner::CircularRobotFootprintPtr agent_model = boost::make_shared<hateb_local_planner::CircularRobotFootprint>(agent_radius_);
 
-    // Homotopy class planning explores topologically distinct routes (left of /
-    // right of / through a gap) and commits to the cheapest with hysteresis.
-    // Without it a single band sits in the saddle between two equally good ways
-    // around an obstacle and oscillates instead of committing - which is what
-    // makes narrow passages fail.
-    if (hateb_local_planner::params().enable_homotopy_class_planning)
-    {
-        planner_ = hateb_local_planner::PlannerInterfacePtr(new hateb_local_planner::HomotopyClassPlanner(&obstacles_, robot_model, visualization_, &via_points_, agent_model, &agents_via_points_map_));
-        RCLCPP_INFO(this->get_logger(), "Local planner: HomotopyClassPlanner (max %d classes)", hateb_local_planner::params().max_number_classes);
-    }
-    else
-    {
-        planner_ = hateb_local_planner::PlannerInterfacePtr(new hateb_local_planner::TebOptimalPlanner(&obstacles_, robot_model, visualization_, &via_points_, agent_model, &agents_via_points_map_));
-        RCLCPP_INFO(this->get_logger(), "Local planner: TebOptimalPlanner (single band)");
-    }
+    // Single-band TEB. This is the only planner here: it is the one that calls
+    // TebOptimalPlanner::plan(), which builds the per-agent timed bands the
+    // human-aware edges need.
+    planner_ = hateb_local_planner::PlannerInterfacePtr(new hateb_local_planner::TebOptimalPlanner(&obstacles_, robot_model, visualization_, &via_points_, agent_model, &agents_via_points_map_));
+    RCLCPP_INFO(this->get_logger(), "Local planner: TebOptimalPlanner (time-aware agent edges active)");
     planner_->local_weight_optimaltime_ = weight_optimaltime_;
 
     // Oscillation filter length is a duration, so it scales with the control rate.

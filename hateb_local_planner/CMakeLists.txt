@@ -98,10 +98,17 @@ add_executable(hateb_local_planner_node
   src/obstacles.cpp
   src/visualization.cpp
   src/recovery_behaviors.cpp
-  src/homotopy_class_planner.cpp
-  src/graph_search.cpp
   # src/hateb_config.cpp   - replaced by include/hateb_params.h
   # src/backoff.cpp        - backoff recovery deliberately not ported
+  #
+  # Homotopy class planning removed entirely (homotopy_class_planner,
+  # graph_search, h_signature, equivalence_relations). It optimizes candidate
+  # bands by calling optimizeTEB() directly and never calls
+  # TebOptimalPlanner::plan(), which is the only place agents_tebs_map_ is
+  # populated - so under it every time-aware agent edge (AgentRobotSafety,
+  # AgentRobotTTC, AgentRobotRelVelocity, ...) iterated an empty container and
+  # contributed nothing. This planner is benchmarked for its human-aware,
+  # time-coupled behaviour, so that trade is not acceptable here.
 )
 
 ament_target_dependencies(hateb_local_planner_node ${dependencies})

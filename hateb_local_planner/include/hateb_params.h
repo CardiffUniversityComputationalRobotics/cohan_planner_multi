@@ -35,12 +35,14 @@ namespace hateb_local_planner
     double max_vel_x = 0.5;
     double max_vel_y = 0.0;
     double max_vel_theta = 1.2;
-    // 0 = forward-only. The robot may drive forward and rotate/steer, never
-    // reverse. Enforced in three places, because the optimizer's constraints are
-    // soft and can be violated: this bound in EdgeVelocity, the
-    // weight_kinematics_forward_drive term below, and a hard clamp in
-    // saturateVelocity(). Set > 0 to allow limited reversing again.
-    double max_vel_x_backwards = 0.0;
+    // Upstream default. Forward-only (0.0) is NOT supported here: pose 0 of the
+    // band is pinned to the robot's current position AND orientation, so when
+    // the path leaves from behind the robot the optimizer's only options are to
+    // reverse or turn in place. Forbidding reverse leaves it oscillating in yaw
+    // instead of committing, because single-band TEB has no
+    // deletePlansDetouringBackwards() filter to reject a backward start (that
+    // lived in the homotopy planner, which is gone).
+    double max_vel_x_backwards = 0.2;
     double acc_lim_x = 0.5;
     double acc_lim_y = 0.0;
     double acc_lim_theta = 0.5;
@@ -92,11 +94,10 @@ namespace hateb_local_planner
     // stops the optimizer producing sideways motion between poses. It has to
     // dominate the soft costs, hence 1000 rather than an O(1) value.
     double weight_kinematics_nh = 1000.0;
-    // Penalises a pose-to-pose step pointing behind the robot's heading
-    // (EdgeKinematicsDiffDrive _error[1]). At the upstream 1.0 it merely
-    // *prefers* forward motion; raised to match weight_kinematics_nh so
-    // forward-only is effectively a hard constraint in the optimizer.
-    double weight_kinematics_forward_drive = 1000.0;
+    // Upstream default. Prefers forward motion without forbidding a reversal.
+    // Raising this to force forward-only made the optimizer fight itself when
+    // the goal was behind the robot; see max_vel_x_backwards above.
+    double weight_kinematics_forward_drive = 1.0;
     double weight_kinematics_turning_radius = 1.0;
 
     double weight_optimaltime = 1.0;
@@ -188,36 +189,6 @@ namespace hateb_local_planner
     double weight_agent_robot_rel_vel = 20.0;
     double weight_agent_robot_visibility = 20.0;
 
-    // ================= Homotopy class planning =================
-    // Explores topologically distinct routes (left of / right of / through) and
-    // optimizes a band in each, then commits to the cheapest with hysteresis.
-    // This is what lets the planner commit to threading a narrow gap instead of
-    // sitting in the saddle between two equally good options and oscillating.
-    bool enable_homotopy_class_planning = true;
-    bool enable_multithreading = true;
-    bool simple_exploration = false;
-    int max_number_classes = 5;
-    double selection_cost_hysteresis = 1.0;
-    double selection_prefer_initial_plan = 0.95;
-    double selection_obst_cost_scale = 100.0;
-    double selection_viapoint_cost_scale = 1.0;
-    bool selection_alternative_time_cost = false;
-    double obstacle_keypoint_offset = 0.1;
-    double obstacle_heading_threshold = 0.45;
-    int roadmap_graph_no_samples = 15;
-    double roadmap_graph_area_width = 6.0; // [m]
-    double roadmap_graph_area_length_scale = 1.0;
-    double h_signature_prescaler = 1.0;
-    double h_signature_threshold = 0.1;
-    double switching_blocking_period = 0.0;
-    bool viapoints_all_candidates = true;
-    bool visualize_hc_graph = false;
-    double visualize_with_time_as_z_axis_scale = 0.0;
-    bool delete_detours_backwards = true;
-    double detours_orientation_tolerance = M_PI / 2.0;
-    double length_start_orientation_vector = 0.4;
-    double max_ratio_detours_duration_best_duration = 3.0;
-
     // ================= Recovery =================
     double omega_chage_time_seperation = 1.0;
     bool shrink_horizon_backup = true;
@@ -228,9 +199,6 @@ namespace hateb_local_planner
     double oscillation_recovery_min_duration = 10.0;
     double oscillation_filter_duration = 10.0;
 
-    // Goal tolerances, needed by graph_search
-    double xy_goal_tolerance = 0.3;
-    double yaw_goal_tolerance = 0.8;
   };
 
   //! Process-wide configuration. Single definition across translation units

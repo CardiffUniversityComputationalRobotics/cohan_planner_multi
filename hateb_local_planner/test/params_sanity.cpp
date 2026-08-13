@@ -55,23 +55,17 @@ int main()
   assert(p.weight_nominal_agent_vel_x > 0.0);
   assert(p.weight_agent_acc_lim_x > 0.0);
 
-  // --- Forward-only motion ------------------------------------------------
-  // The optimizer's reverse penalties are soft, so forward-only only actually
-  // holds if the hard clamp in saturateVelocity() is armed (max_vel_x_backwards
-  // <= 0) AND the forward-drive term is heavy enough to shape the band.
-  if (p.max_vel_x_backwards <= 0.0)
-    assert(p.weight_kinematics_forward_drive >= 100.0);
+  // --- Reverse must stay enabled ------------------------------------------
+  // Pose 0 of the band is pinned to the robot's current position AND
+  // orientation, so a path leaving from behind the robot can only be followed
+  // by reversing or turning in place. Forbidding reverse leaves the optimizer
+  // oscillating in yaw: the homotopy planner used to hide this with
+  // deletePlansDetouringBackwards(), and it has been removed.
+  assert(p.max_vel_x_backwards > 0.0);
 
-  // --- Homotopy class planning -------------------------------------------
-  // With fewer than 2 classes there is nothing to choose between and the
-  // planner degenerates to the single band that stalls in narrow passages.
-  if (p.enable_homotopy_class_planning)
-    assert(p.max_number_classes >= 2);
-  // HSignature asserts this at runtime; catch it here instead of mid-run.
-  assert(p.h_signature_prescaler > 0.1 && p.h_signature_prescaler <= 1.0);
-
-  std::printf("hateb params sanity: OK (worst obstacle cost %.4f, min passage %.2f m, hcp %s)\n",
-              worst_cost, 2.0 * (0.3 + p.min_obstacle_dist),
-              p.enable_homotopy_class_planning ? "on" : "off");
+  std::printf("hateb params sanity: OK (worst obstacle cost %.4f, min passage %.2f m)\n",
+              worst_cost, 2.0 * (0.3 + p.min_obstacle_dist));
+  std::printf("  planner                : TebOptimalPlanner (single band, homotopy removed)\n");
+  std::printf("  time-aware agent edges : active\n");
   return 0;
 }
