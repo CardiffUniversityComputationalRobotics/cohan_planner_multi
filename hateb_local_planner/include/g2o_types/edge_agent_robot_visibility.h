@@ -39,7 +39,7 @@
 
 #include <g2o_types/vertex_pose.h>
 #include <g2o_types/penalties.h>
-// #include <hateb_config.h>
+#include <hateb_params.h>
 #include <g2o_types/base_teb_edges.h>
 
 // #include "g2o/core/base_unary_edge.h"
@@ -91,9 +91,9 @@ namespace hateb_local_planner
     // }
 
   protected:
-    double visibility_cost_threshold_ = 20;
-    double penalty_epsilon_ = 0.5;
-    double fov_ = 180;
+    double visibility_cost_threshold_ = params().visibility_cost_threshold;
+    double penalty_epsilon_ = params().penalty_epsilon;
+    double fov_ = params().fov;
 
   public:
     EIGEN_MAKE_ALIGNED_OPERATOR_NEW

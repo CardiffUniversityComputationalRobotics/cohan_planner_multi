@@ -50,7 +50,7 @@
 #include <g2o_types/vertex_pose.h>
 #include <g2o_types/base_teb_edges.h>
 #include <g2o_types/penalties.h>
-// #include <hateb_config.h>
+#include <hateb_params.h>
 
 namespace hateb_local_planner
 {
@@ -138,9 +138,9 @@ namespace hateb_local_planner
   protected:
     const BaseRobotFootprintModel *robot_model_; //!< Store pointer to robot_model
     // ! CONFIG PARAMETERS
-    double min_obstacle_dist_ = 0.3;
-    double penalty_epsilon_ = 0.5;
-    double obstacle_cost_exponent_ = 20;
+    double min_obstacle_dist_ = params().min_obstacle_dist;
+    double penalty_epsilon_ = params().penalty_epsilon;
+    double obstacle_cost_exponent_ = params().obstacle_cost_exponent;
 
   public:
     EIGEN_MAKE_ALIGNED_OPERATOR_NEW
@@ -236,10 +236,10 @@ namespace hateb_local_planner
     const BaseRobotFootprintModel *robot_model_; //!< Store pointer to robot_model
 
     // ! CONFIG PARAMETERS
-    double min_obstacle_dist_ = 0.1;
-    double penalty_epsilon_ = 0.5;
-    double obstacle_cost_exponent_ = 20;
-    double inflation_dist_ = 0.1;
+    double min_obstacle_dist_ = params().min_obstacle_dist;
+    double penalty_epsilon_ = params().penalty_epsilon;
+    double obstacle_cost_exponent_ = params().obstacle_cost_exponent;
+    double inflation_dist_ = params().inflation_dist;
 
   public:
     EIGEN_MAKE_ALIGNED_OPERATOR_NEW

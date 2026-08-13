@@ -412,9 +412,14 @@ namespace hateb_local_planner
      * @param estimate_orient if \c true, calculate orientation using the straight line distance vector between consecutive poses
      *                        (only copy start and goal orientation; recommended if no orientation data is available).
      * @param min_samples Minimum number of samples that should be initialized at least
+     * @param max_vel_x if > 0, the time difference per segment is estimated from the
+     *                  distance actually covered instead of using the uniform \c dt.
+     *                  Pass 0 to keep the uniform behaviour.
+     * @param max_vel_theta rotational counterpart of \c max_vel_x
      * @return true if everything was fine, false otherwise
      */
-    bool initTEBtoGoal(const std::vector<geometry_msgs::msg::PoseStamped> &plan, double dt, bool estimate_orient = false, int min_samples = 3, double skip_dist = 0.0);
+    bool initTEBtoGoal(const std::vector<geometry_msgs::msg::PoseStamped> &plan, double dt, bool estimate_orient = false, int min_samples = 3, double skip_dist = 0.0,
+                       double max_vel_x = 0.0, double max_vel_theta = 0.0);
 
     //@}
 

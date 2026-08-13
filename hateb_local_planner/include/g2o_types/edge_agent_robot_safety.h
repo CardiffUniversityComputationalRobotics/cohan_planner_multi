@@ -39,7 +39,7 @@
 #include <robot_footprint_model.h>
 #include <g2o_types/vertex_pose.h>
 #include <g2o_types/penalties.h>
-// #include <hateb_config.h>
+#include <hateb_params.h>
 #include <g2o_types/base_teb_edges.h>
 
 // #include "g2o/core/base_unary_edge.h"
@@ -96,8 +96,8 @@ namespace hateb_local_planner
     const BaseRobotFootprintModel *robot_model_;
     Obstacle *obs_ = new PointObstacle();
     double agent_radius_ = std::numeric_limits<double>::infinity();
-    double min_dist_ = 0.0;
-    double penalty_epsilon_ = 0.5;
+    double min_dist_ = params().min_agent_robot_dist;
+    double penalty_epsilon_ = params().penalty_epsilon;
 
   public:
     EIGEN_MAKE_ALIGNED_OPERATOR_NEW

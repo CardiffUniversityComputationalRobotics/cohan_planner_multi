@@ -38,7 +38,7 @@
 #include <g2o_types/vertex_pose.h>
 #include <g2o_types/vertex_timediff.h>
 #include <g2o_types/penalties.h>
-// #include <hateb_config.h>
+#include <hateb_params.h>
 #include <g2o_types/base_teb_edges.h>
 
 // #include "g2o/core/base_multi_edge.h"
@@ -92,8 +92,8 @@ namespace hateb_local_planner
     // }
 
   protected:
-    double rel_vel_cost_threshold_ = 5.0;
-    double penalty_epsilon_ = 0.5;
+    double rel_vel_cost_threshold_ = params().rel_vel_cost_threshold;
+    double penalty_epsilon_ = params().penalty_epsilon;
 
   public:
     EIGEN_MAKE_ALIGNED_OPERATOR_NEW

@@ -51,7 +51,7 @@
 #include <g2o_types/vertex_timediff.h>
 #include <g2o_types/base_teb_edges.h>
 #include <g2o_types/penalties.h>
-// #include <hateb_config.h>
+#include <hateb_params.h>
 
 #include <iostream>
 
@@ -93,8 +93,8 @@ namespace hateb_local_planner
       const VertexPose *conf2 = static_cast<const VertexPose *>(_vertices[1]);
       const VertexTimeDiff *deltaT = static_cast<const VertexTimeDiff *>(_vertices[2]);
 
-      double vel_linear = 0.4;
-      double vel_theta = 1.0;
+      double vel_linear = params().max_vel_x;
+      double vel_theta = params().max_vel_theta;
 
       if (mode == 3)
       {
@@ -134,11 +134,10 @@ namespace hateb_local_planner
 
   protected:
     const BaseRobotFootprintModel *robot_model_;
-    Obstacle *obs_ = new PointObstacle();
     int mode = 0;
-    bool exact_arc_length_ = false;
-    double max_vel_x_backwards_ = 0.0;
-    double penalty_epsilon_ = 0.01;
+    bool exact_arc_length_ = params().exact_arc_length;
+    double max_vel_x_backwards_ = params().max_vel_x_backwards;
+    double penalty_epsilon_ = params().penalty_epsilon;
 
   public:
     EIGEN_MAKE_ALIGNED_OPERATOR_NEW
@@ -181,9 +180,9 @@ namespace hateb_local_planner
       const VertexPose *conf2 = static_cast<const VertexPose *>(_vertices[1]);
       const VertexTimeDiff *deltaT = static_cast<const VertexTimeDiff *>(_vertices[2]);
 
-      double vel_linear_x = 0.4;
-      double vel_linear_y = 0.0;
-      double vel_theta = 1.0;
+      double vel_linear_x = params().max_vel_x;
+      double vel_linear_y = params().max_vel_y;
+      double vel_theta = params().max_vel_theta;
 
       if (mode == 3)
       {
@@ -220,10 +219,9 @@ namespace hateb_local_planner
 
   protected:
     const BaseRobotFootprintModel *robot_model_;
-    Obstacle *obs_ = new PointObstacle();
     int mode = 0;
-    double max_vel_x_backwards_ = 0.0;
-    double penalty_epsilon_ = 0.01;
+    double max_vel_x_backwards_ = params().max_vel_x_backwards;
+    double penalty_epsilon_ = params().penalty_epsilon;
 
   public:
     EIGEN_MAKE_ALIGNED_OPERATOR_NEW
@@ -267,7 +265,7 @@ namespace hateb_local_planner
       double vy = r_dy / deltaT->estimate();
       double omega = g2o::normalize_theta(conf2->theta() - conf1->theta()) / deltaT->estimate();
 
-      _error[0] = penaltyBoundToInterval(vx, max_vel_x_backwards_, max_vel_x_, penalty_epsilon_);
+      _error[0] = penaltyBoundToInterval(vx, -max_vel_x_backwards_, max_vel_x_, penalty_epsilon_);
       _error[1] = penaltyBoundToInterval(vy, max_vel_y_, 0.0); // we do not apply the penalty epsilon here, since the velocity could be close to zero
       _error[2] = penaltyBoundToInterval(omega, max_vel_theta_, penalty_epsilon_);
       // std::cout << "nominal_vel " <<nominal_vel_<< '\n';
@@ -290,14 +288,14 @@ namespace hateb_local_planner
     }
 
   protected:
-    // ! param configs
-    double max_vel_x_ = 0.5;
-    double max_vel_y_ = 0.0;
-    double max_vel_theta_ = 1.2;
+    // ! param configs (agent limits, not robot limits)
+    double max_vel_x_ = params().agent_max_vel_x;
+    double max_vel_y_ = params().agent_max_vel_y;
+    double max_vel_theta_ = params().agent_max_vel_theta;
     double nominal_vel_ = 0.0;
-    double max_vel_x_backwards_ = 0.0;
-    double penalty_epsilon_ = 0.01;
-    bool use_agent_elastic_vel_ = true;
+    double max_vel_x_backwards_ = params().agent_max_vel_x_backwards;
+    double penalty_epsilon_ = params().penalty_epsilon;
+    bool use_agent_elastic_vel_ = params().use_agent_elastic_vel;
 
   public:
     EIGEN_MAKE_ALIGNED_OPERATOR_NEW
@@ -359,13 +357,14 @@ namespace hateb_local_planner
     }
 
   protected:
-    double exact_arc_length_ = false;
+    // ! param configs (agent limits, not robot limits)
+    bool exact_arc_length_ = params().exact_arc_length;
     double nominal_vel_ = 0.0;
-    double max_vel_x_backwards_ = 0.0;
-    double max_vel_x_ = 0.5;
-    double max_vel_theta_ = 1.2;
-    double penalty_epsilon_ = 0.01;
-    double use_agent_elastic_vel_ = true;
+    double max_vel_x_backwards_ = params().agent_max_vel_x_backwards;
+    double max_vel_x_ = params().agent_max_vel_x;
+    double max_vel_theta_ = params().agent_max_vel_theta;
+    double penalty_epsilon_ = params().penalty_epsilon;
+    bool use_agent_elastic_vel_ = params().use_agent_elastic_vel;
 
     //
     // ErrorVector &getError() {

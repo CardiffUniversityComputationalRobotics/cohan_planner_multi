@@ -124,5 +124,10 @@ install(TARGETS
   DESTINATION lib/${PROJECT_NAME}
 )
 
+if(BUILD_TESTING)
+  # Header-only sanity check on hateb_params.h. No gtest, no ROS.
+  add_executable(test_hateb_params test/params_sanity.cpp)
+  add_test(NAME hateb_params_sanity COMMAND test_hateb_params)
+endif()
 
 ament_package()

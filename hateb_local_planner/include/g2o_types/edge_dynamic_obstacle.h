@@ -51,7 +51,7 @@
 #include <g2o_types/penalties.h>
 #include <g2o_types/base_teb_edges.h>
 #include <obstacles.h>
-// #include <hateb_config.h>
+#include <hateb_params.h>
 #include <robot_footprint_model.h>
 
 namespace hateb_local_planner
@@ -137,9 +137,9 @@ namespace hateb_local_planner
   protected:
     const BaseRobotFootprintModel *robot_model_; //!< Store pointer to robot_model
     double t_;                                   //!< Estimated time until current pose is reached
-    double min_obstacle_dist_ = 0.3;
-    double penalty_epsilon_ = 0.01;
-    double dynamic_obstacle_inflation_dist_ = 0.1;
+    double min_obstacle_dist_ = params().min_obstacle_dist;
+    double penalty_epsilon_ = params().penalty_epsilon;
+    double dynamic_obstacle_inflation_dist_ = params().dynamic_obstacle_inflation_dist;
 
   public:
     EIGEN_MAKE_ALIGNED_OPERATOR_NEW

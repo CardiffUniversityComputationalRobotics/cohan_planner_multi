@@ -224,7 +224,7 @@ namespace hateb_local_planner
                                       double obst_cost_scale, double viapoint_cost_scale, bool alternative_time_cost, cohan_msgs::msg::OptimizationCostArray *op_costs)
   {
 
-    optimizeTEB(iterations_innerloop, iterations_outerloop, compute_cost_afterwards, obst_cost_scale, viapoint_cost_scale, alternative_time_cost, op_costs, dt_ref_, dt_hysteresis_);
+    return optimizeTEB(iterations_innerloop, iterations_outerloop, compute_cost_afterwards, obst_cost_scale, viapoint_cost_scale, alternative_time_cost, op_costs, dt_ref_, dt_hysteresis_);
   }
 
   bool TebOptimalPlanner::optimizeTEB(int iterations_innerloop, int iterations_outerloop, bool compute_cost_afterwards,
@@ -310,7 +310,8 @@ namespace hateb_local_planner
       // teb_.initTrajectoryToGoal(initial_plan, cfg_->robot.max_vel_x, cfg_->trajectory.global_plan_overwrite_orientation, cfg_->trajectory.min_samples, cfg_->trajectory.allow_init_with_backwards_motion,cfg_->trajectory.teb_init_skip_dist);
       teb_.initTEBtoGoal(initial_plan, dt_ref, true,
                          min_samples_,
-                         teb_init_skip_dist_);
+                         teb_init_skip_dist_,
+                         max_vel_x_, params().max_vel_theta);
     }
     else if (disable_warm_start_)
     {
@@ -318,7 +319,8 @@ namespace hateb_local_planner
       // teb_.initTrajectoryToGoal(initial_plan, cfg_->robot.max_vel_x, cfg_->trajectory.global_plan_overwrite_orientation, cfg_->trajectory.min_samples, cfg_->trajectory.allow_init_with_backwards_motion,cfg_->trajectory.teb_init_skip_dist);
       teb_.initTEBtoGoal(initial_plan, dt_ref, true,
                          min_samples_,
-                         teb_init_skip_dist_);
+                         teb_init_skip_dist_,
+                         max_vel_x_, params().max_vel_theta);
     }
     else // warm start
     {
@@ -336,7 +338,8 @@ namespace hateb_local_planner
         // teb_.initTrajectoryToGoal(initial_plan, cfg_->robot.max_vel_x, true, cfg_->trajectory.min_samples, cfg_->trajectory.allow_init_with_backwards_motion);
         teb_.initTEBtoGoal(initial_plan, dt_ref, true,
                            min_samples_,
-                           teb_init_skip_dist_);
+                           teb_init_skip_dist_,
+                           max_vel_x_, params().max_vel_theta);
       }
     }
     if (start_vel)
@@ -422,7 +425,8 @@ namespace hateb_local_planner
           agents_tebs_map_[agent_id].initTEBtoGoal(
               initial_agent_plan, dt_ref, true,
               agent_min_samples_,
-              teb_init_skip_dist_);
+              teb_init_skip_dist_,
+              params().agent_max_vel_x, params().agent_max_vel_theta);
         }
         else if (disable_warm_start_)
         {
@@ -431,7 +435,8 @@ namespace hateb_local_planner
           // agent_teb.initTrajectoryToGoal(initial_agent_plan, cfg_->agent.max_vel_x, true, cfg_->trajectory.agent_min_samples, cfg_->trajectory.allow_init_with_backwards_motion, cfg_->trajectory.teb_init_skip_dist);
           agent_teb.initTEBtoGoal(initial_agent_plan, dt_ref,
                                   true, agent_min_samples_,
-                                  teb_init_skip_dist_);
+                                  teb_init_skip_dist_,
+                                  params().agent_max_vel_x, params().agent_max_vel_theta);
         }
 
         else
@@ -450,7 +455,8 @@ namespace hateb_local_planner
             // agent_teb.initTrajectoryToGoal(initial_agent_plan, cfg_->agent.max_vel_x, true, cfg_->trajectory.agent_min_samples, false, cfg_->trajectory.teb_init_skip_dist);
             agent_teb.initTEBtoGoal(initial_agent_plan, dt_ref,
                                     true, agent_min_samples_,
-                                    teb_init_skip_dist_);
+                                    teb_init_skip_dist_,
+                                    params().agent_max_vel_x, params().agent_max_vel_theta);
           }
         }
         // give start velocity for agents

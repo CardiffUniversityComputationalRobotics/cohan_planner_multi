@@ -49,7 +49,7 @@
 #include <g2o_types/vertex_pose.h>
 #include <g2o_types/penalties.h>
 #include <g2o_types/base_teb_edges.h>
-// #include <hateb_config.h>
+#include <hateb_params.h>
 
 #include <cmath>
 
@@ -170,8 +170,8 @@ namespace hateb_local_planner
     }
 
   protected:
-    bool exact_arc_length_ = false;
-    double min_turning_radius_ = 0.0;
+    bool exact_arc_length_ = params().exact_arc_length;
+    double min_turning_radius_ = params().min_turning_radius;
 
   public:
     EIGEN_MAKE_ALIGNED_OPERATOR_NEW

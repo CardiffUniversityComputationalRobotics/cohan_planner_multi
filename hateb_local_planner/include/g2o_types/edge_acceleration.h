@@ -48,7 +48,7 @@
 #include <g2o_types/vertex_pose.h>
 #include <g2o_types/vertex_timediff.h>
 #include <g2o_types/penalties.h>
-// #include <hateb_config.h>
+#include <hateb_params.h>
 #include <g2o_types/base_teb_edges.h>
 
 #include <geometry_msgs/msg/twist.hpp>
@@ -145,10 +145,10 @@ namespace hateb_local_planner
     }
 
   protected:
-    bool exact_arc_length_ = false;
-    double acc_lim_x_ = 0.3;
-    double acc_lim_theta_ = 0.4;
-    double penalty_epsilon_ = 0.01;
+    bool exact_arc_length_ = params().exact_arc_length;
+    double acc_lim_x_ = params().acc_lim_x;
+    double acc_lim_theta_ = params().acc_lim_theta;
+    double penalty_epsilon_ = params().penalty_epsilon;
 
   public:
     EIGEN_MAKE_ALIGNED_OPERATOR_NEW
@@ -237,10 +237,10 @@ namespace hateb_local_planner
     }
 
   protected:
-    bool exact_arc_length_ = false;
-    double acc_lim_x_ = 0.3;
-    double acc_lim_theta_ = 0.4;
-    double penalty_epsilon_ = 0.01;
+    bool exact_arc_length_ = params().exact_arc_length;
+    double acc_lim_x_ = params().acc_lim_x;
+    double acc_lim_theta_ = params().acc_lim_theta;
+    double penalty_epsilon_ = params().penalty_epsilon;
 
   public:
     EIGEN_MAKE_ALIGNED_OPERATOR_NEW
@@ -330,10 +330,10 @@ namespace hateb_local_planner
     }
 
   protected:
-    bool exact_arc_length_ = false;
-    double acc_lim_x_ = 0.3;
-    double acc_lim_theta_ = 0.4;
-    double penalty_epsilon_ = 0.01;
+    bool exact_arc_length_ = params().exact_arc_length;
+    double acc_lim_x_ = params().acc_lim_x;
+    double acc_lim_theta_ = params().acc_lim_theta;
+    double penalty_epsilon_ = params().penalty_epsilon;
 
   public:
     EIGEN_MAKE_ALIGNED_OPERATOR_NEW
@@ -423,11 +423,11 @@ namespace hateb_local_planner
     }
 
   protected:
-    bool exact_arc_length_ = false;
-    double acc_lim_x_ = 0.3;
-    double acc_lim_y_ = 0.0;
-    double acc_lim_theta_ = 0.4;
-    double penalty_epsilon_ = 0.01;
+    bool exact_arc_length_ = params().exact_arc_length;
+    double acc_lim_x_ = params().acc_lim_x;
+    double acc_lim_y_ = params().acc_lim_y;
+    double acc_lim_theta_ = params().acc_lim_theta;
+    double penalty_epsilon_ = params().penalty_epsilon;
 
   public:
     EIGEN_MAKE_ALIGNED_OPERATOR_NEW
@@ -518,11 +518,11 @@ namespace hateb_local_planner
     }
 
   protected:
-    bool exact_arc_length_ = false;
-    double acc_lim_x_ = 0.3;
-    double acc_lim_y_ = 0.0;
-    double acc_lim_theta_ = 0.4;
-    double penalty_epsilon_ = 0.01;
+    bool exact_arc_length_ = params().exact_arc_length;
+    double acc_lim_x_ = params().acc_lim_x;
+    double acc_lim_y_ = params().acc_lim_y;
+    double acc_lim_theta_ = params().acc_lim_theta;
+    double penalty_epsilon_ = params().penalty_epsilon;
 
   public:
     EIGEN_MAKE_ALIGNED_OPERATOR_NEW
@@ -614,11 +614,11 @@ namespace hateb_local_planner
     }
 
   protected:
-    bool exact_arc_length_ = false;
-    double acc_lim_x_ = 0.3;
-    double acc_lim_y_ = 0.0;
-    double acc_lim_theta_ = 0.4;
-    double penalty_epsilon_ = 0.01;
+    bool exact_arc_length_ = params().exact_arc_length;
+    double acc_lim_x_ = params().acc_lim_x;
+    double acc_lim_y_ = params().acc_lim_y;
+    double acc_lim_theta_ = params().acc_lim_theta;
+    double penalty_epsilon_ = params().penalty_epsilon;
 
   public:
     EIGEN_MAKE_ALIGNED_OPERATOR_NEW
@@ -698,11 +698,11 @@ namespace hateb_local_planner
     }
 
   protected:
-    bool exact_arc_length_ = false;
-    double acc_lim_x_ = 0.3;
-    double acc_lim_y_ = 0.0;
-    double acc_lim_theta_ = 0.4;
-    double penalty_epsilon_ = 0.01;
+    bool exact_arc_length_ = params().exact_arc_length;
+    double acc_lim_x_ = params().agent_acc_lim_x;
+    double acc_lim_y_ = params().agent_acc_lim_y;
+    double acc_lim_theta_ = params().agent_acc_lim_theta;
+    double penalty_epsilon_ = params().penalty_epsilon;
 
   public:
     EIGEN_MAKE_ALIGNED_OPERATOR_NEW
@@ -774,11 +774,11 @@ namespace hateb_local_planner
     }
 
   protected:
-    bool exact_arc_length_ = false;
-    double acc_lim_x_ = 0.3;
-    double acc_lim_y_ = 0.0;
-    double acc_lim_theta_ = 0.4;
-    double penalty_epsilon_ = 0.01;
+    bool exact_arc_length_ = params().exact_arc_length;
+    double acc_lim_x_ = params().agent_acc_lim_x;
+    double acc_lim_y_ = params().agent_acc_lim_y;
+    double acc_lim_theta_ = params().agent_acc_lim_theta;
+    double penalty_epsilon_ = params().penalty_epsilon;
 
   public:
     EIGEN_MAKE_ALIGNED_OPERATOR_NEW
@@ -851,11 +851,11 @@ namespace hateb_local_planner
     }
 
   protected:
-    bool exact_arc_length_ = false;
-    double acc_lim_x_ = 0.3;
-    double acc_lim_y_ = 0.0;
-    double acc_lim_theta_ = 0.4;
-    double penalty_epsilon_ = 0.01;
+    bool exact_arc_length_ = params().exact_arc_length;
+    double acc_lim_x_ = params().agent_acc_lim_x;
+    double acc_lim_y_ = params().agent_acc_lim_y;
+    double acc_lim_theta_ = params().agent_acc_lim_theta;
+    double penalty_epsilon_ = params().penalty_epsilon;
 
   public:
     EIGEN_MAKE_ALIGNED_OPERATOR_NEW
@@ -945,11 +945,11 @@ namespace hateb_local_planner
     }
 
   protected:
-    bool exact_arc_length_ = false;
-    double acc_lim_x_ = 0.3;
-    double acc_lim_y_ = 0.0;
-    double acc_lim_theta_ = 0.4;
-    double penalty_epsilon_ = 0.01;
+    bool exact_arc_length_ = params().exact_arc_length;
+    double acc_lim_x_ = params().agent_acc_lim_x;
+    double acc_lim_y_ = params().agent_acc_lim_y;
+    double acc_lim_theta_ = params().agent_acc_lim_theta;
+    double penalty_epsilon_ = params().penalty_epsilon;
 
   public:
     EIGEN_MAKE_ALIGNED_OPERATOR_NEW
@@ -1040,11 +1040,11 @@ namespace hateb_local_planner
     }
 
   protected:
-    bool exact_arc_length_ = false;
-    double acc_lim_x_ = 0.3;
-    double acc_lim_y_ = 0.0;
-    double acc_lim_theta_ = 0.4;
-    double penalty_epsilon_ = 0.01;
+    bool exact_arc_length_ = params().exact_arc_length;
+    double acc_lim_x_ = params().agent_acc_lim_x;
+    double acc_lim_y_ = params().agent_acc_lim_y;
+    double acc_lim_theta_ = params().agent_acc_lim_theta;
+    double penalty_epsilon_ = params().penalty_epsilon;
 
   public:
     EIGEN_MAKE_ALIGNED_OPERATOR_NEW
@@ -1136,11 +1136,11 @@ namespace hateb_local_planner
     }
 
   protected:
-    bool exact_arc_length_ = false;
-    double acc_lim_x_ = 0.3;
-    double acc_lim_y_ = 0.0;
-    double acc_lim_theta_ = 0.4;
-    double penalty_epsilon_ = 0.01;
+    bool exact_arc_length_ = params().exact_arc_length;
+    double acc_lim_x_ = params().agent_acc_lim_x;
+    double acc_lim_y_ = params().agent_acc_lim_y;
+    double acc_lim_theta_ = params().agent_acc_lim_theta;
+    double penalty_epsilon_ = params().penalty_epsilon;
 
   public:
     EIGEN_MAKE_ALIGNED_OPERATOR_NEW

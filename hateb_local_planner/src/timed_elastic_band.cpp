@@ -337,8 +337,21 @@ namespace hateb_local_planner
     return true;
   }
 
-  bool TimedElasticBand::initTEBtoGoal(const std::vector<geometry_msgs::msg::PoseStamped> &plan, double dt, bool estimate_orient, int min_samples, double skip_dist)
+  bool TimedElasticBand::initTEBtoGoal(const std::vector<geometry_msgs::msg::PoseStamped> &plan, double dt, bool estimate_orient, int min_samples, double skip_dist,
+                                       double max_vel_x, double max_vel_theta)
   {
+    // Time difference for the segment ending at `next`. A uniform dt makes every
+    // segment measure exactly dt_ref, so autoResize() - which only subdivides
+    // when TimeDiff(i) > dt_ref + dt_hysteresis - can never fire, and the band
+    // keeps the coarse spacing of the global plan (skip_dist apart) while
+    // implying dist/dt_ref m/s. Estimating from the distance actually covered
+    // restores the upstream behaviour: long segments start above dt_ref and get
+    // subdivided until the band is properly resolved.
+    auto segment_dt = [&](const PoseSE2 &next) {
+      if (max_vel_x <= 0.0)
+        return dt;
+      return std::max(estimateDeltaT(BackPose(), next, max_vel_x, max_vel_theta), 1e-3);
+    };
 
     if (!isInit())
     {
@@ -372,8 +385,8 @@ namespace hateb_local_planner
         {
           yaw = tf2::getYaw(plan[i].pose.orientation);
         }
-        // double dt = estimateDeltaT(BackPose(), intermediate_pose, max_vel_x, max_vel_theta);
-        addPoseAndTimeDiff(plan[i].pose.position.x, plan[i].pose.position.y, yaw, dt);
+        PoseSE2 next(plan[i].pose.position.x, plan[i].pose.position.y, yaw);
+        addPoseAndTimeDiff(next, segment_dt(next));
       }
 
       PoseSE2 goal(plan.back().pose);
@@ -386,14 +399,13 @@ namespace hateb_local_planner
         while ((int)sizePoses() < min_samples - 1) // subtract goal point that will be added later
         {
           // simple strategy: interpolate between the current pose and the goal
-          // double dt = estimateDeltaT(BackPose(), intermediate_pose, max_vel_x, max_vel_theta);
-          addPoseAndTimeDiff(PoseSE2::average(BackPose(), goal), dt); // let the optimier correct the timestep (TODO: better initialization
+          PoseSE2 mid = PoseSE2::average(BackPose(), goal);
+          addPoseAndTimeDiff(mid, segment_dt(mid)); // let the optimier correct the timestep (TODO: better initialization
         }
       }
 
       // Now add final state with given orientation
-      // double dt = estimateDeltaT(BackPose(), goal, max_vel_x, max_vel_theta);
-      addPoseAndTimeDiff(goal, dt);
+      addPoseAndTimeDiff(goal, segment_dt(goal));
       setPoseVertexFixed(sizePoses() - 1, true); // GoalConf is a fixed constraint during optimization
     }
     else // size!=0

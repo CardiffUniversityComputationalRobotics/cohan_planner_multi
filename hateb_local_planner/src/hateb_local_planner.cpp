@@ -121,6 +121,7 @@ private:
 
     // ! PUBLISHERS
     rclcpp::Publisher<std_msgs::msg::Bool>::SharedPtr goal_reached_pub_;
+    rclcpp::Publisher<cohan_msgs::msg::OptimizationCostArray>::SharedPtr op_costs_pub_;
     rclcpp::Publisher<std_msgs::msg::Bool>::SharedPtr stop_motion_pub_;
     rclcpp::Publisher<geometry_msgs::msg::PoseStamped>::SharedPtr query_goal_pose_rviz_pub_;
     rclcpp::Publisher<visualization_msgs::msg::Marker>::SharedPtr query_goal_radius_rviz_pub_;
@@ -148,8 +149,8 @@ private:
     double robot_inscribed_radius_ = 0.4;
     double robot_circumscribed_radius_ = 0.4;
 
-    double max_vel_y_ = 0.0;
-    double max_vel_x_backwards_ = 0.0;
+    double max_vel_y_ = hateb_local_planner::params().max_vel_y;
+    double max_vel_x_backwards_ = hateb_local_planner::params().max_vel_x_backwards;
 
     double max_trans_vel_, max_rot_vel_;
 
@@ -171,7 +172,7 @@ private:
     // Timing & Prediction
     // =============================
     double timer_period_;
-    double omega_chage_time_seperation_ = 1.0;
+    double omega_chage_time_seperation_ = hateb_local_planner::params().omega_chage_time_seperation;
     rclcpp::Time last_position_time_;
     rclcpp::Time last_omega_sign_change_ = this->now() - rclcpp::Duration::from_seconds(omega_chage_time_seperation_);
     double last_omega_;
@@ -180,9 +181,9 @@ private:
     // Global Plan & Local Plan
     // =============================
     std::vector<geometry_msgs::msg::PoseStamped> global_plan_; //!< Store the current global plan
-    double max_global_plan_lookahead_dist_ = 0.0;
-    double global_plan_prune_distance_ = 5.0;
-    double global_plan_viapoint_sep_ = 0.2;
+    double max_global_plan_lookahead_dist_ = hateb_local_planner::params().max_global_plan_lookahead_dist;
+    double global_plan_prune_distance_ = hateb_local_planner::params().global_plan_prune_distance;
+    double global_plan_viapoint_sep_ = hateb_local_planner::params().global_plan_viapoint_sep;
 
     // =============================
     // Goals & Tolerances
@@ -219,7 +220,7 @@ private:
     // Obstacle Handling
     // =============================
     hateb_local_planner::ObstContainer obstacles_; //!< Obstacle vector that should be considered during local trajectory optimization
-    double costmap_obstacles_behind_robot_dist_ = 0.5;
+    double costmap_obstacles_behind_robot_dist_ = hateb_local_planner::params().costmap_obstacles_behind_robot_dist;
 
     // =============================
     // Via Points
@@ -229,9 +230,9 @@ private:
     // =============================
     // Planner Control and Recovery
     // =============================
-    int no_infeasible_plans_;      //!< Store how many times in a row the planner failed to find a feasible plan.
-    int control_look_ahead_poses_; //! Index of the pose used to extract the velocity command
-    int feasibility_check_no_poses_ = 2;
+    int no_infeasible_plans_ = 0;  //!< Store how many times in a row the planner failed to find a feasible plan.
+    int control_look_ahead_poses_ = hateb_local_planner::params().control_look_ahead_poses; //! Index of the pose used to extract the velocity command
+    int feasibility_check_no_poses_ = hateb_local_planner::params().feasibility_check_no_poses;
     double ang_theta_; // Re-orientation angle
 
     // =============================
@@ -242,15 +243,15 @@ private:
     // =============================
     // Optimization Parameters
     // =============================
-    double dt_hysteresis_ = 0.1;
-    double dt_ref_ = 0.3;
-    double weight_optimaltime_ = 1;
+    double dt_hysteresis_ = hateb_local_planner::params().dt_hysteresis;
+    double dt_ref_ = hateb_local_planner::params().dt_ref;
+    double weight_optimaltime_ = hateb_local_planner::params().weight_optimaltime;
 
     // =============================
     // Misc
     // =============================
     int is_mode_, change_mode_;
-    int num_moving_avg_ = 5;
+    int num_moving_avg_ = hateb_local_planner::params().num_moving_avg;
 };
 
 //!  Constructor.
@@ -287,6 +288,10 @@ HATEBPlanningFramework::HATEBPlanningFramework()
     this->declare_parameter("max_rot_vel", rclcpp::ParameterValue(1.2));
     this->declare_parameter("xy_goal_tolerance", rclcpp::ParameterValue(0.1));
     this->declare_parameter("yaw_goal_tolerance", rclcpp::ParameterValue(0.75));
+    // Narrow-passage tuning: the optimizer needs (robot_base_radius +
+    // min_obstacle_dist) of clearance on each side to find any feasible band.
+    this->declare_parameter("min_obstacle_dist", rclcpp::ParameterValue(hateb_local_planner::params().min_obstacle_dist));
+    this->declare_parameter("inflation_dist", rclcpp::ParameterValue(hateb_local_planner::params().inflation_dist));
 
     // ! GET PARAMETERS
     world_frame_ = this->get_parameter("world_frame").as_string();
@@ -301,6 +306,24 @@ HATEBPlanningFramework::HATEBPlanningFramework()
     max_rot_vel_ = this->get_parameter("max_rot_vel").as_double();
     xy_goal_tolerance_ = this->get_parameter("xy_goal_tolerance").as_double();
     yaw_goal_tolerance_ = this->get_parameter("yaw_goal_tolerance").as_double();
+
+    // Push the YAML-tunable values into the shared configuration BEFORE any
+    // planner or g2o edge is constructed, so the optimizer optimises against
+    // the same limits that saturateVelocity() later clamps to. Without this the
+    // optimizer used its own hardcoded limits and the YAML only trimmed the
+    // result afterwards.
+    hateb_local_planner::params().max_vel_x = max_trans_vel_;
+    hateb_local_planner::params().max_vel_theta = max_rot_vel_;
+    hateb_local_planner::params().agent_radius = agent_radius_;
+    hateb_local_planner::params().min_obstacle_dist = this->get_parameter("min_obstacle_dist").as_double();
+    hateb_local_planner::params().inflation_dist = this->get_parameter("inflation_dist").as_double();
+
+    RCLCPP_INFO(this->get_logger(),
+                "Obstacle clearance: robot_radius %.2f + min_obstacle_dist %.2f -> needs %.2f m half-width "
+                "(passages narrower than %.2f m are unsolvable)",
+                robot_base_radius_, hateb_local_planner::params().min_obstacle_dist,
+                robot_base_radius_ + hateb_local_planner::params().min_obstacle_dist,
+                2.0 * (robot_base_radius_ + hateb_local_planner::params().min_obstacle_dist));
 
     robot_inscribed_radius_ = robot_base_radius_;
     robot_circumscribed_radius_ = robot_base_radius_;
@@ -328,6 +351,11 @@ HATEBPlanningFramework::HATEBPlanningFramework()
     //=======================================================================
     // ! Publishers
     //=======================================================================
+    // Per-constraint optimization costs. plan() already fills these every cycle;
+    // publishing them is the only way to see which edge is dominating when the
+    // robot refuses to move.
+    op_costs_pub_ = this->create_publisher<cohan_msgs::msg::OptimizationCostArray>("optimization_costs", 1);
+
     goal_reached_pub_ = this->create_publisher<std_msgs::msg::Bool>("goal_reached", 1);
     stop_motion_pub_ = this->create_publisher<std_msgs::msg::Bool>("stop_motion", 1);
 
@@ -377,12 +405,20 @@ void HATEBPlanningFramework::odomCallback(const nav_msgs::msg::Odometry::SharedP
         useless_roll, yaw;
     tf2::Matrix3x3(last_robot_pose_.getRotation()).getEulerYPR(yaw, useless_pitch, useless_roll);
 
+    // normalize_theta, otherwise a goal yaw near +pi and a robot yaw near -pi
+    // give a difference of ~2pi and the goal can never be reached.
+    double yaw_error = std::fabs(g2o::normalize_theta(yaw - goal_odom_frame_[2]));
+
     if ((goal_available_) &&
         sqrt(pow(goal_odom_frame_[0] - last_robot_pose_.getOrigin().getX(), 2.0) +
              pow(goal_odom_frame_[1] - last_robot_pose_.getOrigin().getY(), 2.0)) < (goal_radius_ + 0.2) &&
-        abs(yaw - goal_odom_frame_[2]) < (yaw_goal_tolerance_ + 0.2))
+        yaw_error < (yaw_goal_tolerance_ + 0.2))
     {
         goal_available_ = false;
+        // Stop driving. Clearing goal_available_ only stops us publishing, so
+        // without this the base keeps the last non-zero command until its own
+        // cmd_vel watchdog trips.
+        cmd_vel_pub_->publish(geometry_msgs::msg::Twist());
         std_msgs::msg::Bool goal_reached;
         goal_reached.data = true;
         goal_reached_pub_->publish(goal_reached);
@@ -830,14 +866,9 @@ void HATEBPlanningFramework::initialize()
  */
 void HATEBPlanningFramework::planningSetup()
 {
-
-    // ======================================
-    hateb_local_planner::RobotFootprintModelPtr robot_model = boost::make_shared<hateb_local_planner::CircularRobotFootprint>(0.4);
-    hateb_local_planner::CircularRobotFootprintPtr agent_model = boost::make_shared<hateb_local_planner::CircularRobotFootprint>(0.4);
-
-    planner_ = hateb_local_planner::PlannerInterfacePtr(new hateb_local_planner::TebOptimalPlanner(&obstacles_, robot_model, visualization_, &via_points_, agent_model, &agents_via_points_map_));
-
-    // ++++++++++++++++++++++++++++++++++++++
+    // The planner is already built in initialize() using the configured
+    // robot_base_radius / agent_radius. Rebuilding it here with hardcoded 0.4 m
+    // footprints threw those away, along with local_weight_optimaltime_.
 
     rclcpp::Rate loop_rate(1.0 / (timer_period_)); // 10 hz
     // goal_available_ = true;
@@ -1092,12 +1123,16 @@ uint32_t HATEBPlanningFramework::computeVelocityCommands(geometry_msgs::msg::Twi
 
     bool success = planner_->plan(transformed_plan, &current_robot_velocity_, free_goal_vel_, &transformed_agent_plan_vel_map, &op_costs, dt_resize, dt_hyst_resize, is_mode_);
 
+    op_costs_pub_->publish(op_costs);
+
     if (!success)
     {
         planner_->clearPlanner(); // force reinitialization for next time
         RCLCPP_WARN(this->get_logger(), "hateb_local_planner was not able to obtain a local plan.");
         ++no_infeasible_plans_;
-        last_cmd_ = cmd_vel.twist;
+        last_cmd_ = cmd_vel.twist; // still zeroed from the top of this function
+        cmd_vel_pub_->publish(last_cmd_);
+        return 1;
     }
 
     hateb_local_planner::PlanTrajCombined plan_traj_combined;
@@ -1136,6 +1171,10 @@ uint32_t HATEBPlanningFramework::computeVelocityCommands(geometry_msgs::msg::Twi
         RCLCPP_WARN(this->get_logger(), "HATebLocalPlannerROS: trajectory is not feasible. Resetting planner...");
         ++no_infeasible_plans_; // increase number of infeasible solutions in a row
         last_cmd_ = cmd_vel.twist;
+        // Must return: falling through would let getVelocityCommand() below
+        // overwrite these zeros and drive a trajectory we just rejected.
+        cmd_vel_pub_->publish(last_cmd_);
+        return 1;
     }
 
     // Get the velocity command for this sampling interval
@@ -1144,7 +1183,9 @@ uint32_t HATEBPlanningFramework::computeVelocityCommands(geometry_msgs::msg::Twi
         planner_->clearPlanner();
         RCLCPP_WARN(this->get_logger(), "HATebLocalPlannerROS: velocity command invalid. Resetting planner...");
         ++no_infeasible_plans_; // increase number of infeasible solutions in a row
-        last_cmd_ = cmd_vel.twist;
+        last_cmd_ = cmd_vel.twist; // getVelocityCommand() zeroes these on failure
+        cmd_vel_pub_->publish(last_cmd_);
+        return 1;
     }
 
     // Saturate velocity, if the optimization results violates the constraints (could be possible due to soft constraints).

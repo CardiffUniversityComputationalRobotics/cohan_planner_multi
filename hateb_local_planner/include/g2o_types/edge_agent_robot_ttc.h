@@ -38,7 +38,7 @@
 #include <g2o_types/vertex_pose.h>
 #include <g2o_types/vertex_timediff.h>
 #include <g2o_types/penalties.h>
-// #include <hateb_config.h>
+#include <hateb_params.h>
 #include <g2o_types/base_teb_edges.h>
 #include <iostream>
 // #include "g2o/core/base_multi_edge.h"
@@ -65,7 +65,7 @@ namespace hateb_local_planner
 
     void computeError()
     {
-      assert(cfg_ && (radius_sum_ < std::numeric_limits<double>::infinity()));
+      assert((radius_sum_ < std::numeric_limits<double>::infinity()));
       const VertexPose *robot_bandpt =
           static_cast<const VertexPose *>(_vertices[0]);
       const VertexPose *robot_bandpt_nxt =
@@ -148,10 +148,10 @@ namespace hateb_local_planner
   protected:
     double radius_sum_ = std::numeric_limits<double>::infinity();
     double radius_sum_sq_ = std::numeric_limits<double>::infinity();
-    double agent_robot_ttc_scale_alpha_ = 2.0;
-    double penalty_epsilon_ = 0.5;
-    double ttc_threshold_ = 20;
-    bool scale_agent_robot_ttc_c_ = true;
+    double agent_robot_ttc_scale_alpha_ = params().agent_robot_ttc_scale_alpha;
+    double penalty_epsilon_ = params().penalty_epsilon;
+    double ttc_threshold_ = params().ttc_threshold;
+    bool scale_agent_robot_ttc_c_ = params().scale_agent_robot_ttc_c;
 
   public:
     EIGEN_MAKE_ALIGNED_OPERATOR_NEW

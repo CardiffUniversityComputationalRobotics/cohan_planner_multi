@@ -47,6 +47,7 @@
 #include <boost/make_shared.hpp>
 
 // teb stuff
+#include <hateb_params.h>
 #include <misc.h>
 #include <timed_elastic_band.h>
 #include <planner_interface.h>
@@ -756,112 +757,117 @@ namespace hateb_local_planner
     std::vector<double> agent_nominal_vels; // Nominal agent velocities calculated using moving average filter
     double current_agent_robot_min_dist;    // Controls addition of edges
 
-    // ! config params
-    bool publish_feedback_ = true;
-    bool optimization_activate_ = true;
-    double dt_ref_ = 0.3;
-    double dt_hysteresis_ = 0.1;
-    bool include_dynamic_obstacles_ = true;
-    int min_samples_ = 3;
-    bool teb_autosize_ = true;
-    double weight_adapt_factor_ = 2;
-    double teb_init_skip_dist_ = 0.4;
-    bool disable_warm_start_ = true;
-    double force_reinit_new_goal_dist_ = 1.0;
-    double force_reinit_new_goal_angular_ = 0.78;
-    int planning_mode_ = 1;
-    int agent_min_samples_ = 3;
-    int no_inner_iterations_ = 8;
-    int no_outer_iterations_ = 4;
-    bool legacy_obstacle_association_ = false;
-    double min_turning_radius_ = 0.0;
-    double weight_kinematics_turning_radius_ = 0;
-    bool use_agent_robot_safety_c_ = true;
-    bool use_agent_robot_ttc_c_ = true;
-    bool use_agent_robot_ttcplus_c_ = true;
-    bool use_agent_robot_rel_vel_c_ = true;
-    bool use_agent_agent_safety_c_ = true;
-    bool use_agent_robot_visi_c_ = true;
-    bool optimization_verbose_ = false;
-    double weight_obstacle_ = 50;
+    // ! config params - all sourced from the single configuration in
+    // ! hateb_params.h so these can never drift from the g2o edge copies.
+    bool publish_feedback_ = params().publish_feedback;
+    bool optimization_activate_ = params().optimization_activate;
+    double dt_ref_ = params().dt_ref;
+    double dt_hysteresis_ = params().dt_hysteresis;
+    bool include_dynamic_obstacles_ = params().include_dynamic_obstacles;
+    int min_samples_ = params().min_samples;
+    bool teb_autosize_ = params().teb_autosize;
+    double weight_adapt_factor_ = params().weight_adapt_factor;
+    double teb_init_skip_dist_ = params().teb_init_skip_dist;
+    bool disable_warm_start_ = params().disable_warm_start;
+    double force_reinit_new_goal_dist_ = params().force_reinit_new_goal_dist;
+    double force_reinit_new_goal_angular_ = params().force_reinit_new_goal_angular;
+    int planning_mode_ = params().planning_mode;
+    int agent_min_samples_ = params().agent_min_samples;
+    int no_inner_iterations_ = params().no_inner_iterations;
+    int no_outer_iterations_ = params().no_outer_iterations;
+    bool legacy_obstacle_association_ = params().legacy_obstacle_association;
+    double min_turning_radius_ = params().min_turning_radius;
+    double weight_kinematics_turning_radius_ = params().weight_kinematics_turning_radius;
+    bool use_agent_robot_safety_c_ = params().use_agent_robot_safety_c;
+    bool use_agent_robot_ttc_c_ = params().use_agent_robot_ttc_c;
+    bool use_agent_robot_ttcplus_c_ = params().use_agent_robot_ttcplus_c;
+    bool use_agent_robot_rel_vel_c_ = params().use_agent_robot_rel_vel_c;
+    bool use_agent_agent_safety_c_ = params().use_agent_agent_safety_c;
+    bool use_agent_robot_visi_c_ = params().use_agent_robot_visi_c;
+    bool optimization_verbose_ = params().optimization_verbose;
+    double weight_obstacle_ = params().weight_obstacle;
 
-    double inflation_dist_ = 0.6;
-    double min_obstacle_dist_ = 0.3;
-    double weight_inflation_ = 0.1;
+    double inflation_dist_ = params().inflation_dist;
+    double min_obstacle_dist_ = params().min_obstacle_dist;
+    double weight_inflation_ = params().weight_inflation;
 
-    double obstacle_association_force_inclusion_factor_ = 0.5;
-    double obstacle_association_cutoff_factor_ = 5;
-    int obstacle_poses_affected_ = 1;
+    double obstacle_association_force_inclusion_factor_ = params().obstacle_association_force_inclusion_factor;
+    double obstacle_association_cutoff_factor_ = params().obstacle_association_cutoff_factor;
+    int obstacle_poses_affected_ = params().obstacle_poses_affected;
 
-    double weight_dynamic_obstacle_ = 50;
-    double weight_dynamic_obstacle_inflation_ = 0.1;
-    double weight_invisible_human_ = 20;
+    double weight_dynamic_obstacle_ = params().weight_dynamic_obstacle;
+    double weight_dynamic_obstacle_inflation_ = params().weight_dynamic_obstacle_inflation;
+    double weight_invisible_human_ = params().weight_invisible_human;
 
-    double weight_viapoint_ = 0.05;
-    bool via_points_ordered_ = false;
-    double weight_agent_viapoint_ = 1;
+    double weight_viapoint_ = params().weight_viapoint;
+    bool via_points_ordered_ = params().via_points_ordered;
+    double weight_agent_viapoint_ = params().weight_agent_viapoint;
 
-    double max_vel_x_ = 0.5;
-    double max_vel_y_ = 0.0;
+    // Kept at zero for a differential-drive robot: AddEdgesVelocity and
+    // extractVelocity both branch on max_vel_y_ == 0 to select the
+    // nonholonomic path.
+    double max_vel_x_ = params().max_vel_x;
+    double max_vel_y_ = params().max_vel_y;
 
-    bool add_invisible_humans_ = false;
+    bool add_invisible_humans_ = params().add_invisible_humans;
 
-    // ! PARAMS TO CHECK
     // Velocity weights
-    double weight_max_vel_x_ = 0.1;
-    double weight_max_vel_y_ = 2.0;
-    double weight_max_vel_theta_ = 1.0;
+    double weight_max_vel_x_ = params().weight_max_vel_x;
+    double weight_max_vel_y_ = params().weight_max_vel_y;
+    double weight_max_vel_theta_ = params().weight_max_vel_theta;
 
     // Agent velocity weights
-    double weight_max_agent_vel_x_ = 0.0;
-    double weight_max_agent_vel_y_ = 0.0;
-    double weight_max_agent_vel_theta_ = 0.0;
-    double weight_nominal_agent_vel_x_ = 0.0;
+    double weight_max_agent_vel_x_ = params().weight_max_agent_vel_x;
+    double weight_max_agent_vel_y_ = params().weight_max_agent_vel_y;
+    double weight_max_agent_vel_theta_ = params().weight_max_agent_vel_theta;
+    double weight_nominal_agent_vel_x_ = params().weight_nominal_agent_vel_x;
 
     // Acceleration weights
-    double weight_acc_lim_x_ = 1.0;
-    double weight_acc_lim_y_ = 1.0;
-    double weight_acc_lim_theta_ = 1.0;
+    double weight_acc_lim_x_ = params().weight_acc_lim_x;
+    double weight_acc_lim_y_ = params().weight_acc_lim_y;
+    double weight_acc_lim_theta_ = params().weight_acc_lim_theta;
 
     // Agent acceleration weights
-    double weight_agent_acc_lim_x_ = 0.0;
-    double weight_agent_acc_lim_theta_ = 0.0;
+    double weight_agent_acc_lim_x_ = params().weight_agent_acc_lim_x;
+    double weight_agent_acc_lim_theta_ = params().weight_agent_acc_lim_theta;
 
     // Limits
-    double acc_lim_y_ = 0.3;
+    double acc_lim_y_ = params().acc_lim_y;
 
     // Time optimal weights
-    double weight_optimaltime_ = 1.0;
-    double weight_agent_optimaltime_ = 1.0;
+    double weight_optimaltime_ = params().weight_optimaltime;
+    double weight_agent_optimaltime_ = params().weight_agent_optimaltime;
 
     // Path optimization
-    double weight_shortest_path_ = 0.0;
+    double weight_shortest_path_ = params().weight_shortest_path;
 
-    // Kinematic constraints
-    double weight_kinematics_nh_ = 1.0;
-    double weight_kinematics_forward_drive_ = 1.0;
+    // Kinematic constraints. weight_kinematics_nh_ is the nonholonomic
+    // constraint weight and must dominate the soft costs, otherwise the
+    // optimizer is free to plan sideways motion a diff-drive base cannot track.
+    double weight_kinematics_nh_ = params().weight_kinematics_nh;
+    double weight_kinematics_forward_drive_ = params().weight_kinematics_forward_drive;
 
     // For rotation preference
-    double weight_prefer_rotdir_ = 50.0;
+    double weight_prefer_rotdir_ = params().weight_prefer_rotdir;
 
     // For agent-robot safety
-    double min_agent_robot_dist_ = 0.6; // set a default, tune as needed
-    double weight_agent_robot_safety_ = 20.0;
+    double min_agent_robot_dist_ = params().min_agent_robot_dist;
+    double weight_agent_robot_safety_ = params().weight_agent_robot_safety;
 
     // For agent-agent safety
-    double weight_agent_agent_safety_ = 20.0;
+    double weight_agent_agent_safety_ = params().weight_agent_agent_safety;
 
     // For Time-to-Collision (TTC)
-    double weight_agent_robot_ttc_ = 20.0;
-    double weight_agent_robot_ttcplus_ = 20.0;
+    double weight_agent_robot_ttc_ = params().weight_agent_robot_ttc;
+    double weight_agent_robot_ttcplus_ = params().weight_agent_robot_ttcplus;
 
     // For relative velocity
-    double weight_agent_robot_rel_vel_ = 20.0;
+    double weight_agent_robot_rel_vel_ = params().weight_agent_robot_rel_vel;
 
     // For visibility
-    double weight_agent_robot_visibility_ = 20.0;
+    double weight_agent_robot_visibility_ = params().weight_agent_robot_visibility;
 
-    double min_resolution_collision_check_angular_ = 3.141516;
+    double min_resolution_collision_check_angular_ = params().min_resolution_collision_check_angular;
 
   public:
     EIGEN_MAKE_ALIGNED_OPERATOR_NEW

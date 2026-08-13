@@ -43,7 +43,7 @@
 #include <g2o_types/penalties.h>
 #include <g2o_types/base_teb_edges.h>
 #include <obstacles.h>
-// #include <hateb_config.h>
+#include <hateb_params.h>
 #include <robot_footprint_model.h>
 
 namespace hateb_local_planner
@@ -126,8 +126,8 @@ namespace hateb_local_planner
     double a_max = 2.94; // 0.3g
 
     // ! CONFIG PARAMS
-    double invisible_human_threshold_ = 20;
-    double penalty_epsilon_ = 0.5;
+    double invisible_human_threshold_ = params().invisible_human_threshold;
+    double penalty_epsilon_ = params().penalty_epsilon;
 
   public:
     EIGEN_MAKE_ALIGNED_OPERATOR_NEW

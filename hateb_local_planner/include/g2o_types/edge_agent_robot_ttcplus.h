@@ -40,7 +40,7 @@
 #include <g2o_types/vertex_pose.h>
 #include <g2o_types/vertex_timediff.h>
 #include <g2o_types/penalties.h>
-// #include <hateb_config.h>
+#include <hateb_params.h>
 #include <std_msgs/msg/header.hpp>
 #include "sstream"
 #include <g2o_types/base_teb_edges.h>
@@ -170,11 +170,11 @@ namespace hateb_local_planner
     double radius_sum_sq_ = std::numeric_limits<double>::infinity();
 
     // ! CONFIG PARAMETERS
-    double ttcplus_timer_ = 50;
-    double ttcplus_threshold_ = 10;
-    double penalty_epsilon_ = 0.5;
-    bool scale_agent_robot_ttcplus_c_ = true;
-    double agent_robot_ttcplus_scale_alpha_ = 20;
+    double ttcplus_timer_ = params().ttcplus_timer;
+    double ttcplus_threshold_ = params().ttcplus_threshold;
+    double penalty_epsilon_ = params().penalty_epsilon;
+    bool scale_agent_robot_ttcplus_c_ = params().scale_agent_robot_ttcplus_c;
+    double agent_robot_ttcplus_scale_alpha_ = params().agent_robot_ttcplus_scale_alpha;
 
   public:
     EIGEN_MAKE_ALIGNED_OPERATOR_NEW
